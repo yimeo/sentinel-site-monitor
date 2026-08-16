@@ -171,6 +171,9 @@ chmod 600 /etc/cron.d/site-monitor
 echo "[7/8] 仅开放 Sentinel 独立入口端口…"
 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
   ufw allow "${PUBLIC_PORT}/tcp"
+elif command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then
+  firewall-cmd --permanent --add-port="${PUBLIC_PORT}/tcp"
+  firewall-cmd --reload
 fi
 
 echo "[8/8] 验证部署…"
