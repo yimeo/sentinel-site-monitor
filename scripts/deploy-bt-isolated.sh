@@ -175,7 +175,13 @@ fi
 
 echo "[8/8] 验证部署…"
 systemctl is-active --quiet site-monitor || { journalctl -u site-monitor --no-pager -n 50 >&2; exit 1; }
-curl -fsS --max-time 10 "http://127.0.0.1:${APP_PORT}/" >/dev/null || fail "应用本机健康检查失败。"
+for attempt in $(seq 1 30); do
+  if curl -fsS --max-time 2 "http://127.0.0.1:${APP_PORT}/" >/dev/null; then
+    break
+  fi
+  sleep 1
+done
+curl -fsS --max-time 10 "http://127.0.0.1:${APP_PORT}/" >/dev/null || fail "应用本机健康检查失败（等待 30 秒后端口仍未就绪）。"
 curl -fsS --max-time 60 -X POST -H "Authorization: Bearer ${LOCAL_SCHEDULER_TOKEN}" "http://127.0.0.1:${APP_PORT}/api/scheduled/monitor-run" >/dev/null || fail "首次调度检查触发失败。"
 PROXY_STATUS="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${PUBLIC_PORT}/" || true)"
 [[ "$PROXY_STATUS" == "200" ]] || fail "独立 Nginx 入口预期 200，实际为 ${PROXY_STATUS:-无响应}。"
