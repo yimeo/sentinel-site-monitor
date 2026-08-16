@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { completeLocalAuth } from "@/_core/localAuthFlow";
 import { Activity, ArrowRight, LockKeyhole, ShieldCheck, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -13,9 +14,12 @@ export default function Login() {
   const utils = trpc.useUtils();
   const setup = trpc.auth.setupRequired.useQuery();
   const login = trpc.auth.localLogin.useMutation({
-    onSuccess: async () => {
-      await utils.auth.me.invalidate();
-      setLocation("/");
+    onSuccess: user => {
+      completeLocalAuth(user, {
+        setCurrentUser: currentUser => utils.auth.me.setData(undefined, currentUser),
+        notifySuccess: () => toast.success("登录成功，正在进入监控中心。"),
+        navigateHome: () => setLocation("/"),
+      });
     },
     onError: error => toast.error(error.message),
   });
