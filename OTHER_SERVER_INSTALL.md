@@ -2,7 +2,7 @@
 
 > **优先使用 `QUICK_INSTALL.md` 中的一键安装器。** 本文档保留给宝塔面板、已有 Nginx 站点、非默认安装目录、手动升级与故障排查等场景。
 
-本指南适用于 **Ubuntu 20.04+** 或 **CentOS 7+**。源码包不包含数据库、SMTP 密码、管理员密码、调度令牌或任何现有服务器配置。
+本指南适用于 **Ubuntu 20.04+**、**CentOS 7+** 或 RHEL 系列。自动安装器会识别 `apt-get`、`dnf` 或 `yum`；源码包不包含数据库、SMTP 密码、管理员密码、调度令牌或任何现有服务器配置。
 
 ## 1. 前置条件
 
@@ -21,7 +21,8 @@
 
 ```bash
 corepack enable
-corepack prepare pnpm@10 --activate
+# Ubuntu / 新版 RHEL：pnpm 10；CentOS 7：pnpm 8
+corepack prepare "pnpm@$(if grep -qE 'release[[:space:]]+7([.[:space:]]|$)' /etc/centos-release 2>/dev/null; then echo 8.15.9; else echo 10; fi)" --activate
 pnpm --version
 sudo mkdir -p /www/wwwroot/site-monitor
 sudo tar -xzf sentinel-site-monitor-source.tar.gz -C /www/wwwroot/site-monitor --strip-components=1
@@ -115,12 +116,12 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now site-monitor-access-port.path
 ```
 
-## 6. 配置每分钟调度
+## 6. 配置每 10 秒扫描调度
 
 将 `/etc/site-monitor.env` 中的 `LOCAL_SCHEDULER_TOKEN` 复制到 root 可读的 cron 文件。先确保 cron 服务已启用：
 
 ```cron
-* * * * * root /usr/bin/curl -fsS -X POST 'http://127.0.0.1:3201/api/scheduled/monitor-run' -H 'Authorization: Bearer <LOCAL_SCHEDULER_TOKEN>' >> /var/log/site-monitor-cron.log 2>&1
+* * * * * root for delay in 0 10 20 30 40 50; do ( sleep $delay; /usr/bin/curl -fsS --max-time 8 -X POST 'http://127.0.0.1:3201/api/scheduled/monitor-run' -H 'Authorization: Bearer <LOCAL_SCHEDULER_TOKEN>' >> /var/log/site-monitor-cron.log 2>&1 ) & done; wait
 ```
 
 建议将该行写入 `/etc/cron.d/site-monitor` 后执行 `sudo chmod 600 /etc/cron.d/site-monitor`。令牌只能使用环境文件中的实际值；不要将其写入源码仓库或发送给他人。

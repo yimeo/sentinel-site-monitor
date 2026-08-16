@@ -8,7 +8,14 @@ APP_USER="${APP_USER:-www}"
 APP_GROUP="${APP_GROUP:-www}"
 APP_PORT="${APP_PORT:-3202}"
 PUBLIC_PORT="${PUBLIC_PORT:-18080}"
-NODE_VERSION="${NODE_VERSION:-20.19.2}"
+if [[ -z "${NODE_VERSION:-}" ]]; then
+  if [[ -f /etc/centos-release ]] && grep -qE 'release[[:space:]]+7([.[:space:]]|$)' /etc/centos-release; then
+    NODE_VERSION="16.20.2"
+  else
+    NODE_VERSION="20.19.2"
+  fi
+fi
+PNPM_VERSION="${PNPM_VERSION:-$( [[ "${NODE_VERSION%%.*}" -lt 18 ]] && echo 8.15.9 || echo 10 )}"
 SOURCE_ARCHIVE="${SOURCE_ARCHIVE:-/tmp/Sentinel-site-monitor-source-latest.tar.gz}"
 NODE_DIR="/opt/node-v${NODE_VERSION}-linux-x64"
 NGINX_BIN="/www/server/nginx/sbin/nginx"
@@ -70,7 +77,7 @@ if [[ ! -x "$NODE_DIR/bin/node" ]]; then
   rm -f "node-v${NODE_VERSION}-linux-x64.tar.xz"
 fi
 export PATH="$NODE_DIR/bin:$PATH"
-"$NODE_DIR/bin/npm" install -g --prefix "$NODE_DIR" pnpm@10
+"$NODE_DIR/bin/npm" install -g --prefix "$NODE_DIR" "pnpm@${PNPM_VERSION}"
 
 echo "[3/8] 解压源码并安装依赖…"
 install -d -m 750 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR" "$APP_DIR/data" /var/lib/site-monitor /var/lib/site-monitor/home
