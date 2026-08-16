@@ -180,6 +180,10 @@ export const appRouter = router({
       const updated = await db.setMonitorTasksEnabled(ctx.user.id, input.ids, input.enabled);
       return { updated, enabled: input.enabled };
     }),
+    redistributeSchedule: protectedProcedure.input(z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) })).mutation(async ({ ctx, input }) => {
+      const rescheduled = await db.redistributeMonitorTaskSchedule(ctx.user.id, input.ids);
+      return { rescheduled };
+    }),
     runNow: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const task = taskOrNotFound(await db.getMonitorTask(ctx.user.id, input.id));
       return runMonitorTask(task);

@@ -69,7 +69,7 @@ async function getSqlite(): Promise<Database> {
           id INTEGER PRIMARY KEY AUTOINCREMENT, ownerId INTEGER NOT NULL, name TEXT NOT NULL, url TEXT NOT NULL,
           expectedContent TEXT, forbiddenContent TEXT, intervalMinutes INTEGER NOT NULL DEFAULT 5,
           alertMode TEXT NOT NULL DEFAULT 'once', repeatAlertMinutes INTEGER NOT NULL DEFAULT 30, enabled INTEGER NOT NULL DEFAULT 1,
-          status TEXT NOT NULL DEFAULT 'unknown', lastCheckedAt TEXT, lastResponseTimeMs INTEGER, lastHttpStatus INTEGER,
+          status TEXT NOT NULL DEFAULT 'unknown', lastCheckedAt TEXT, nextCheckAt TEXT, lastResponseTimeMs INTEGER, lastHttpStatus INTEGER,
           lastError TEXT, alertOpen INTEGER NOT NULL DEFAULT 0, lastAlertAt TEXT, lastFailureAt TEXT, lastRecoveredAt TEXT,
           createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
         );
@@ -100,6 +100,10 @@ async function getSqlite(): Promise<Database> {
       const siteSettingsColumns = selectRows<Row>(db, "PRAGMA table_info(site_settings)");
       if (!siteSettingsColumns.some(column => String(column.name) === "adminUsername")) {
         db.exec("ALTER TABLE site_settings ADD COLUMN adminUsername TEXT NOT NULL DEFAULT 'sentinel-admin'");
+      }
+      const monitorTaskColumns = selectRows<Row>(db, "PRAGMA table_info(monitor_tasks)");
+      if (!monitorTaskColumns.some(column => String(column.name) === "nextCheckAt")) {
+        db.exec("ALTER TABLE monitor_tasks ADD COLUMN nextCheckAt TEXT");
       }
       const monitorCheckColumns = selectRows<Row>(db, "PRAGMA table_info(monitor_checks)");
       if (!monitorCheckColumns.some(column => String(column.name) === "resolvedAddresses")) {
@@ -159,7 +163,7 @@ function mapTask(row: Row): MonitorTask {
   return {
     id: Number(row.id), ownerId: Number(row.ownerId), name: String(row.name), url: String(row.url), expectedContent: row.expectedContent ? String(row.expectedContent) : null,
     forbiddenContent: row.forbiddenContent ? String(row.forbiddenContent) : null, intervalMinutes: Number(row.intervalMinutes), alertMode: row.alertMode === "repeat" ? "repeat" : "once", repeatAlertMinutes: Number(row.repeatAlertMinutes), enabled: parseBoolean(row.enabled),
-    status: (["up", "down", "content_mismatch"].includes(String(row.status)) ? row.status : "unknown") as MonitorTask["status"], lastCheckedAt: parseDate(row.lastCheckedAt), lastResponseTimeMs: row.lastResponseTimeMs === null ? null : Number(row.lastResponseTimeMs), lastHttpStatus: row.lastHttpStatus === null ? null : Number(row.lastHttpStatus), lastError: row.lastError ? String(row.lastError) : null,
+    status: (["up", "down", "content_mismatch"].includes(String(row.status)) ? row.status : "unknown") as MonitorTask["status"], lastCheckedAt: parseDate(row.lastCheckedAt), nextCheckAt: parseDate(row.nextCheckAt), lastResponseTimeMs: row.lastResponseTimeMs === null ? null : Number(row.lastResponseTimeMs), lastHttpStatus: row.lastHttpStatus === null ? null : Number(row.lastHttpStatus), lastError: row.lastError ? String(row.lastError) : null,
     alertOpen: parseBoolean(row.alertOpen), lastAlertAt: parseDate(row.lastAlertAt), lastFailureAt: parseDate(row.lastFailureAt), lastRecoveredAt: parseDate(row.lastRecoveredAt), createdAt: parseDate(row.createdAt)!, updatedAt: parseDate(row.updatedAt)!,
   };
 }
@@ -268,12 +272,53 @@ export async function getMonitorTaskById(id: number) {
   });
 }
 
+type ScheduleTask = Pick<MonitorTask, "id" | "intervalMinutes" | "lastCheckedAt">;
+
+function getNextCheckAt(intervalMinutes: number, offsetMinutes: number, reference = new Date()) {
+  const intervalMs = Math.max(1, intervalMinutes) * 60_000;
+  const slotOffsetMs = ((offsetMinutes % intervalMinutes) + intervalMinutes) % intervalMinutes * 60_000;
+  const windowStart = Math.floor(reference.getTime() / intervalMs) * intervalMs;
+  const candidate = windowStart + slotOffsetMs;
+  return new Date(candidate > reference.getTime() ? candidate : candidate + intervalMs);
+}
+
+function scheduleTaskGroup(db: Database, tasks: ScheduleTask[], reference: Date, randomize = false) {
+  const byInterval = new Map<number, ScheduleTask[]>();
+  for (const task of tasks) {
+    const group = byInterval.get(task.intervalMinutes) ?? [];
+    group.push(task);
+    byInterval.set(task.intervalMinutes, group);
+  }
+  let scheduled = 0;
+  byInterval.forEach((group, intervalMinutes) => {
+    const ordered = [...group].sort((left, right) => left.id - right.id);
+    if (randomize) {
+      for (let index = ordered.length - 1; index > 0; index -= 1) {
+        const swapIndex = crypto.randomInt(index + 1);
+        [ordered[index], ordered[swapIndex]] = [ordered[swapIndex]!, ordered[index]!];
+      }
+    }
+    const startOffset = randomize ? crypto.randomInt(intervalMinutes) : 0;
+    ordered.forEach((task, index) => {
+      const minimumTime = task.lastCheckedAt ? new Date(Math.max(reference.getTime(), task.lastCheckedAt.getTime() + intervalMinutes * 60_000)) : reference;
+      const nextCheckAt = getNextCheckAt(intervalMinutes, startOffset + index, minimumTime).toISOString();
+      db.run("UPDATE monitor_tasks SET nextCheckAt = ?, updatedAt = ? WHERE id = ?", [nextCheckAt, now(), task.id]);
+      scheduled += 1;
+    });
+  });
+  return scheduled;
+}
+
 export async function createMonitorTask(input: typeof import("../drizzle/schema").monitorTasks.$inferInsert) {
   return write(db => {
     const timestamp = now();
     db.run(`INSERT INTO monitor_tasks (ownerId,name,url,expectedContent,forbiddenContent,intervalMinutes,alertMode,repeatAlertMinutes,enabled,status,alertOpen,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,'unknown',0,?,?)`,
       [input.ownerId!, input.name!, input.url!, toSqlValue(input.expectedContent), toSqlValue(input.forbiddenContent), input.intervalMinutes ?? 5, input.alertMode ?? "once", input.repeatAlertMinutes ?? 30, toSqlValue(input.enabled ?? true), timestamp, timestamp]);
     const row = selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE id = last_insert_rowid() LIMIT 1")[0];
+    if (row) {
+      const intervalMinutes = Number(row.intervalMinutes);
+      db.run("UPDATE monitor_tasks SET nextCheckAt = ? WHERE id = ?", [getNextCheckAt(intervalMinutes, Number(row.id) % intervalMinutes).toISOString(), Number(row.id)]);
+    }
     return row ? mapTask(row) : undefined;
   });
 }
@@ -282,6 +327,7 @@ export async function importMonitorTasks(ownerId: number, tasks: MonitorTaskTran
   return write(db => {
     const existing = new Set(selectRows<{ name: string; url: string }>(db, "SELECT name, url FROM monitor_tasks WHERE ownerId = ?", [ownerId]).map(task => `${task.name}\u0000${task.url}`));
     const timestamp = now();
+    const importedTasks: ScheduleTask[] = [];
     let imported = 0;
     let skipped = 0;
     for (const task of tasks) {
@@ -289,21 +335,28 @@ export async function importMonitorTasks(ownerId: number, tasks: MonitorTaskTran
       if (existing.has(key)) { skipped += 1; continue; }
       db.run(`INSERT INTO monitor_tasks (ownerId,name,url,expectedContent,forbiddenContent,intervalMinutes,alertMode,repeatAlertMinutes,enabled,status,alertOpen,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,?,?,'unknown',0,?,?)`,
         [ownerId, task.name, task.url, toSqlValue(task.expectedContent), toSqlValue(task.forbiddenContent), task.intervalMinutes, task.alertMode, task.repeatAlertMinutes, toSqlValue(task.enabled), timestamp, timestamp]);
+      const inserted = selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE id = last_insert_rowid() LIMIT 1")[0];
+      if (inserted) importedTasks.push(mapTask(inserted));
       existing.add(key);
       imported += 1;
     }
+    scheduleTaskGroup(db, importedTasks, new Date(timestamp));
     return { imported, skipped };
   });
 }
 
 export async function updateMonitorTask(ownerId: number, id: number, values: Partial<typeof import("../drizzle/schema").monitorTasks.$inferInsert>) {
   return write(db => {
-    const allowed = ["name", "url", "expectedContent", "forbiddenContent", "intervalMinutes", "alertMode", "repeatAlertMinutes", "enabled", "status", "lastCheckedAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt"] as const;
+    const allowed = ["name", "url", "expectedContent", "forbiddenContent", "intervalMinutes", "alertMode", "repeatAlertMinutes", "enabled", "status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt"] as const;
     const updates = allowed.filter(key => values[key] !== undefined);
     if (updates.length > 0) {
       const assignments = [...updates.map(key => `${key} = ?`), "updatedAt = ?"];
       const params = [...updates.map(key => toSqlValue(values[key])), now(), ownerId, id];
       db.run(`UPDATE monitor_tasks SET ${assignments.join(", ")} WHERE ownerId = ? AND id = ?`, params);
+    }
+    if (values.intervalMinutes !== undefined) {
+      const intervalMinutes = Number(values.intervalMinutes);
+      db.run("UPDATE monitor_tasks SET nextCheckAt = ? WHERE ownerId = ? AND id = ?", [getNextCheckAt(intervalMinutes, id % intervalMinutes).toISOString(), ownerId, id]);
     }
     const row = selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE ownerId = ? AND id = ? LIMIT 1", [ownerId, id])[0];
     return row ? mapTask(row) : undefined;
@@ -319,6 +372,16 @@ export async function setMonitorTasksEnabled(ownerId: number, taskIds: number[],
     if (ownedIds.length === 0) return 0;
     db.run(`UPDATE monitor_tasks SET enabled = ?, updatedAt = ? WHERE ownerId = ? AND id IN (${placeholders})`, [toSqlValue(enabled), now(), ownerId, ...ids]);
     return ownedIds.length;
+  });
+}
+
+export async function redistributeMonitorTaskSchedule(ownerId: number, taskIds: number[]) {
+  const ids = Array.from(new Set(taskIds.filter(id => Number.isInteger(id) && id > 0)));
+  if (ids.length === 0) return 0;
+  return write(db => {
+    const placeholders = ids.map(() => "?").join(",");
+    const tasks = selectRows<Row>(db, `SELECT * FROM monitor_tasks WHERE ownerId = ? AND id IN (${placeholders})`, [ownerId, ...ids]).map(mapTask);
+    return scheduleTaskGroup(db, tasks, new Date(), true);
   });
 }
 
@@ -352,16 +415,20 @@ export async function getChecksForTasks(taskIds: number[], limit = 12) {
 }
 
 export async function listDueMonitorTasks() {
+  await write(db => {
+    const unscheduled = selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE enabled = 1 AND nextCheckAt IS NULL").map(mapTask);
+    scheduleTaskGroup(db, unscheduled, new Date());
+  });
   const tasks = await read(db => selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE enabled = 1").map(mapTask));
   const currentTime = Date.now();
-  return tasks.filter(task => !task.lastCheckedAt || currentTime - task.lastCheckedAt.getTime() >= task.intervalMinutes * 60_000);
+  return tasks.filter(task => task.nextCheckAt !== null && task.nextCheckAt.getTime() <= currentTime);
 }
 
 export async function recordMonitorCheck(taskId: number, result: { status: "success" | "http_error" | "content_mismatch" | "network_error" | "timeout"; responseTimeMs: number; httpStatus: number | null; errorMessage: string | null; expectedContentMatched: boolean | null; resolvedAddresses: string[] }, nextTaskValues: Partial<typeof import("../drizzle/schema").monitorTasks.$inferInsert>) {
   await write(db => {
     const resolvedAddresses = JSON.stringify(Array.from(new Set(result.resolvedAddresses)).slice(0, 32));
     db.run("INSERT INTO monitor_checks (taskId,status,checkedAt,responseTimeMs,httpStatus,errorMessage,expectedContentMatched,resolvedAddresses) VALUES (?,?,?,?,?,?,?,?)", [taskId, result.status, now(), result.responseTimeMs, toSqlValue(result.httpStatus), toSqlValue(result.errorMessage), toSqlValue(result.expectedContentMatched), resolvedAddresses]);
-    const allowed = ["status", "lastCheckedAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt"] as const;
+    const allowed = ["status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt"] as const;
     const updates = allowed.filter(key => nextTaskValues[key] !== undefined);
     if (updates.length) db.run(`UPDATE monitor_tasks SET ${[...updates.map(key => `${key} = ?`), "updatedAt = ?"].join(", ")} WHERE id = ?`, [...updates.map(key => toSqlValue(nextTaskValues[key])), now(), taskId]);
   });

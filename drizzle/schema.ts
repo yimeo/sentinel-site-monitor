@@ -45,6 +45,7 @@ export const monitorTasks = mysqlTable(
     enabled: boolean("enabled").notNull().default(true),
     status: mysqlEnum("status", monitorTaskStatus).notNull().default("unknown"),
     lastCheckedAt: timestamp("lastCheckedAt"),
+    nextCheckAt: timestamp("nextCheckAt"),
     lastResponseTimeMs: int("lastResponseTimeMs"),
     lastHttpStatus: int("lastHttpStatus"),
     lastError: text("lastError"),
@@ -57,7 +58,7 @@ export const monitorTasks = mysqlTable(
   },
   table => [
     index("monitor_tasks_owner_idx").on(table.ownerId),
-    index("monitor_tasks_due_idx").on(table.enabled, table.lastCheckedAt),
+    index("monitor_tasks_due_idx").on(table.enabled, table.nextCheckAt),
   ]
 );
 

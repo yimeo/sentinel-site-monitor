@@ -43,6 +43,13 @@
       "when": 1786774297365,
       "tag": "0005_amazing_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1786885663806,
+      "tag": "0006_crazy_genesis",
+      "breakpoints": true
     }
   ]
 }

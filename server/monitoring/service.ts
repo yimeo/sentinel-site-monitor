@@ -51,6 +51,7 @@ export async function runMonitorTask(task: MonitorTask): Promise<RunResult> {
   await db.recordMonitorCheck(task.id, result, {
     status: nextStatus,
     lastCheckedAt: now,
+    nextCheckAt: new Date(now.getTime() + task.intervalMinutes * 60_000),
     lastResponseTimeMs: result.responseTimeMs,
     lastHttpStatus: result.httpStatus,
     lastError: result.errorMessage,

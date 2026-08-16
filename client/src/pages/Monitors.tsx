@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc } from "@/lib/trpc";
-import { CircleAlert, Download, ExternalLink, FileJson, Pause, Pencil, Play, Plus, Power, Trash2, Upload } from "lucide-react";
+import { CircleAlert, Download, ExternalLink, FileJson, Pause, Pencil, Play, Plus, Power, Shuffle, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { MonitorTask } from "../../../drizzle/schema";
@@ -146,6 +146,13 @@ export default function Monitors() {
     },
     onError: error => toast.error(error.message),
   });
+  const redistributeMutation = trpc.monitor.redistributeSchedule.useMutation({
+    onSuccess: result => {
+      toast.success(`已将 ${result.rescheduled} 个任务随机分散到各自的下一个检查窗口。`);
+      void utils.monitor.list.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
   const exportMutation = trpc.monitor.exportConfig.useMutation({
     onSuccess: backup => {
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
@@ -229,6 +236,7 @@ export default function Monitors() {
   const batchUpdating = batchEnabledMutation.isPending;
   const batchDeleting = batchDeleteMutation.isPending;
   const batchChecking = runSelectedMutation.isPending;
+  const batchRedistributing = redistributeMutation.isPending;
   const toggleSelectedTask = (id: number, selected: boolean) => {
     setSelectedIds(previous => {
       const next = new Set(previous);
@@ -259,6 +267,9 @@ export default function Monitors() {
             <Button onClick={() => runSelectedMutation.mutate({ ids: Array.from(selectedIds) })} disabled={!selectedCount || batchChecking} variant="outline" className="h-7 border-sky-200 px-1.5 text-[11px] text-sky-700 hover:bg-sky-50">
               <Play className="mr-0.5 h-3 w-3" />{batchChecking ? "检查中…" : "检查"}{selectedCount ? ` (${selectedCount})` : ""}
             </Button>
+            <Button onClick={() => redistributeMutation.mutate({ ids: Array.from(selectedIds) })} disabled={!selectedCount || batchRedistributing} variant="outline" title="将所选任务的下一次检查时间随机错开，不会立即发起请求" className="h-7 border-violet-200 px-1.5 text-[11px] text-violet-700 hover:bg-violet-50">
+              <Shuffle className="mr-0.5 h-3 w-3" />{batchRedistributing ? "安排中…" : "错峰"}{selectedCount ? ` (${selectedCount})` : ""}
+            </Button>
             <Button onClick={() => batchEnabledMutation.mutate({ ids: Array.from(selectedIds), enabled: true })} disabled={!selectedCount || batchUpdating} variant="outline" className="h-7 border-emerald-200 px-1.5 text-[11px] text-emerald-700 hover:bg-emerald-50">
               <Power className="mr-0.5 h-3 w-3" />开启{selectedCount ? ` (${selectedCount})` : ""}
             </Button>
@@ -274,7 +285,7 @@ export default function Monitors() {
 
         <div className="mt-5 flex items-start gap-2 rounded-xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-xs leading-5 text-sky-900">
           <FileJson className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
-          <p>导出文件仅包含任务名称、URL、内容规则、检查间隔、启停状态与告警策略，不包含 SMTP、密码、认证信息、检查历史或告警记录。导入仅新增未存在的同名同 URL 任务。</p>
+          <p>导入仅新增未存在的同名同 URL 任务，并会自动将同频率任务分散到各自检查窗口，避免同时请求。选中任务后可点击“错峰”重新随机安排下一次检查时间；该操作不会立即发起检查，也不会改变频率或告警策略。</p>
         </div>
 
         <Card className="mt-8 overflow-hidden border-slate-200/80 bg-white shadow-[0_12px_28px_-22px_rgba(15,23,42,0.28)]">
@@ -314,10 +325,11 @@ export default function Monitors() {
                         {task.forbiddenContent && <ContentRule label="禁止出现" value={task.forbiddenContent} compact={Boolean(task.expectedContent)} />}
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:flex sm:items-center sm:gap-7 lg:min-w-[360px] lg:justify-end">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs sm:flex sm:items-center sm:gap-7 lg:min-w-[455px] lg:justify-end">
                       <div><p className="text-slate-400">检查频率</p><p className="mt-1 font-medium text-slate-700">每 {task.intervalMinutes} 分钟</p></div>
                       <div><p className="text-slate-400">告警策略</p><p className="mt-1 font-medium text-slate-700">{task.alertMode === "repeat" ? `每 ${task.repeatAlertMinutes} 分钟提醒` : "仅首次提醒"}</p></div>
                       <div><p className="text-slate-400">最近检查</p><p className="mt-1 font-medium text-slate-700">{formatDate(task.lastCheckedAt)}</p></div>
+                      <div><p className="text-slate-400">下次检查</p><p className="mt-1 font-medium text-slate-700">{formatDate(task.nextCheckAt)}</p></div>
                     </div>
                     <div className="flex items-center gap-1">
                       <Button aria-label="立即检查" title="立即检查" onClick={() => runMutation.mutate({ id: task.id })} disabled={runMutation.isPending} variant="ghost" size="icon" className="text-slate-500 hover:bg-teal-50 hover:text-teal-700"><Play className="h-4 w-4" /></Button>
