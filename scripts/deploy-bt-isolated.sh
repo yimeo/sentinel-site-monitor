@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 适用于已有宝塔 Nginx 的 Ubuntu 20.04+ 服务器。
+# 适用于已有宝塔 Nginx 的 Ubuntu 20.04+、CentOS 7+ 或 RHEL 系列服务器。
 # 仅新增独立端口站点；不修改宝塔面板端口、既有站点或 80/443 监听配置。
 set -euo pipefail
 
@@ -28,9 +28,40 @@ getent group "$APP_GROUP" >/dev/null 2>&1 || fail "未找到宝塔 Web 用户组
 ! ss -ltnH "( sport = :$PUBLIC_PORT )" | grep -q . || fail "公网端口 $PUBLIC_PORT 已被占用。"
 
 echo "[1/8] 安装部署依赖…"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -y
-apt-get install -y curl ca-certificates tar gzip xz-utils rsync openssl cron
+install_system_dependencies() {
+  if command -v apt-get >/dev/null 2>&1; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -y
+    apt-get install -y curl ca-certificates tar gzip xz-utils rsync openssl cron
+    return
+  fi
+
+  local package_manager=""
+  local packages=(curl ca-certificates tar gzip xz rsync openssl cronie)
+  if command -v dnf >/dev/null 2>&1; then
+    package_manager="dnf"
+  elif command -v yum >/dev/null 2>&1; then
+    package_manager="yum"
+  else
+    fail "未找到支持的系统包管理器；仅支持 apt-get、dnf 或 yum。"
+  fi
+
+  if ! "$package_manager" install -y "${packages[@]}"; then
+    if [[ "$package_manager" == "yum" && -f /etc/centos-release ]] && grep -q 'release 7' /etc/centos-release; then
+      echo "检测到 CentOS 7 软件源失败，正在切换至官方 Vault 镜像后重试…"
+      mkdir -p /etc/yum.repos.d/sentinel-repo-backup
+      cp -a /etc/yum.repos.d/CentOS-*.repo /etc/yum.repos.d/sentinel-repo-backup/ 2>/dev/null || true
+      sed -ri 's|^mirrorlist=|#mirrorlist=|g; s|^#baseurl=http://mirror.centos.org/centos/\$releasever|baseurl=http://vault.centos.org/7.9.2009|g' /etc/yum.repos.d/CentOS-*.repo 2>/dev/null || true
+      yum clean all
+      yum makecache
+      yum install -y "${packages[@]}" || fail "CentOS 7 依赖安装失败，请检查网络、DNS 与 yum 源。"
+    else
+      fail "系统依赖安装失败，请检查软件源和网络。"
+    fi
+  fi
+}
+install_system_dependencies
+unset -f install_system_dependencies
 
 echo "[2/8] 安装隔离 Node.js ${NODE_VERSION}…"
 if [[ ! -x "$NODE_DIR/bin/node" ]]; then
@@ -110,8 +141,8 @@ systemctl enable --now cron site-monitor site-monitor-access-port.path
 "$NGINX_BIN" -s reload
 
 cat >/etc/cron.d/site-monitor <<EOF
-# Sentinel：每分钟检查到期任务；令牌只保存在 root 可读的运行配置中。
-* * * * * root /bin/sh -c '. /etc/site-monitor.env; /usr/bin/curl -fsS --max-time 50 -X POST -H "Authorization: Bearer \$LOCAL_SCHEDULER_TOKEN" http://127.0.0.1:${APP_PORT}/api/scheduled/monitor-run >> /var/log/site-monitor-cron.log 2>&1'
+# Sentinel：每分钟启动一次，在每 10 秒扫描到期任务；令牌只保存在 root 可读的运行配置中。
+* * * * * root /bin/sh -c '. /etc/site-monitor.env; for delay in 0 10 20 30 40 50; do ( sleep \$delay; /usr/bin/curl -fsS --max-time 8 -X POST -H "Authorization: Bearer \$LOCAL_SCHEDULER_TOKEN" http://127.0.0.1:${APP_PORT}/api/scheduled/monitor-run >> /var/log/site-monitor-cron.log 2>&1 ) & done; wait'
 EOF
 chmod 600 /etc/cron.d/site-monitor
 
