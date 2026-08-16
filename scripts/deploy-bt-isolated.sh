@@ -176,7 +176,7 @@ fi
 echo "[8/8] 验证部署…"
 systemctl is-active --quiet site-monitor || { journalctl -u site-monitor --no-pager -n 50 >&2; exit 1; }
 for attempt in $(seq 1 30); do
-  if curl -fsS --max-time 2 "http://127.0.0.1:${APP_PORT}/" >/dev/null; then
+  if curl -fsS --max-time 2 "http://127.0.0.1:${APP_PORT}/" >/dev/null 2>&1; then
     break
   fi
   sleep 1
