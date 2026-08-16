@@ -152,7 +152,14 @@ echo "[6/8] 启用 Sentinel 和配置同步服务…"
 install -m 700 "$APP_DIR/scripts/apply-access-port.sh" /usr/local/sbin/site-monitor-apply-access-port
 install -m 644 "$APP_DIR/scripts/site-monitor-access-port.service" "$APP_DIR/scripts/site-monitor-access-port.path" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now cron site-monitor site-monitor-access-port.path
+if systemctl cat crond.service >/dev/null 2>&1; then
+  CRON_SERVICE="crond"
+elif systemctl cat cron.service >/dev/null 2>&1; then
+  CRON_SERVICE="cron"
+else
+  fail "未找到 cron 或 crond systemd 服务。"
+fi
+systemctl enable --now "$CRON_SERVICE" site-monitor site-monitor-access-port.path
 "$NGINX_BIN" -s reload
 
 cat >/etc/cron.d/site-monitor <<EOF
