@@ -6,6 +6,7 @@ import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
 import { startLogin } from "./const";
+import { shouldStartOAuthRedirect } from "./_core/unauthorizedRedirect";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -16,7 +17,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
-  if (!isUnauthorized) return;
+  if (!shouldStartOAuthRedirect(window.location.pathname, isUnauthorized)) return;
 
   startLogin();
 };
