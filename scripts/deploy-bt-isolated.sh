@@ -84,7 +84,11 @@ install -d -m 750 -o "$APP_USER" -g "$APP_GROUP" "$APP_DIR" "$APP_DIR/data" /var
 tar -xzf "$SOURCE_ARCHIVE" -C "$APP_DIR" --strip-components=1
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR" /var/lib/site-monitor
 cd "$APP_DIR"
-runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor/home PATH="$NODE_DIR/bin:$PATH" "$NODE_DIR/bin/pnpm" install --no-frozen-lockfile
+if [[ "${NODE_VERSION%%.*}" -lt 18 ]]; then
+  runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor/home PATH="$NODE_DIR/bin:$PATH" "$NODE_DIR/bin/npm" install --omit=dev --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+else
+  runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor/home PATH="$NODE_DIR/bin:$PATH" "$NODE_DIR/bin/pnpm" install --no-frozen-lockfile
+fi
 if [[ -f "$APP_DIR/dist/index.js" && -d "$APP_DIR/dist/public" ]]; then
   echo "检测到预构建 dist，跳过旧系统上的前端构建。"
 else
