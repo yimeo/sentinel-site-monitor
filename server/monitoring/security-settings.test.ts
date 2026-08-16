@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "./crypto";
-import { renderMailTemplate, renderMonitorEmailHtml } from "./mail";
+import { buildSmtpTransportOptions, renderMailTemplate, renderMonitorEmailHtml } from "./mail";
 import { defaultMailTemplates } from "../db";
 
 describe("local administrator password", () => {
@@ -42,5 +42,14 @@ describe("mail template variables", () => {
       taskName: "官网首页", url: "https://example.com", status: "正常", httpStatus: "200", responseTimeMs: "32 ms", errorMessage: "—", outageDuration: "1小时2分3秒", checkedAt: "2026/08/14 21:00:00",
     });
     expect(output).toBe("故障持续 1小时2分3秒");
+  });
+
+  it("forces SMTP connections to prefer IPv4 when the server has no IPv6 route", () => {
+    const options = buildSmtpTransportOptions({
+      host: "smtp.example.com", port: 587, secure: false, username: "monitor@example.com",
+      passwordEncrypted: null, fromEmail: "monitor@example.com", recipients: "ops@example.com",
+    });
+    expect(options.family).toBe(4);
+    expect(options.host).toBe("smtp.example.com");
   });
 });

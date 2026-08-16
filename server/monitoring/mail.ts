@@ -5,15 +5,20 @@ import { decryptSecret } from "./crypto";
 
 type MailConfig = Pick<SmtpSettings, "host" | "port" | "secure" | "username" | "passwordEncrypted" | "fromEmail" | "recipients">;
 
-function buildTransport(config: MailConfig) {
+export function buildSmtpTransportOptions(config: MailConfig) {
   const username = config.username?.trim();
   const password = config.passwordEncrypted ? decryptSecret(config.passwordEncrypted) : undefined;
-  return nodemailer.createTransport({
+  return {
     host: config.host,
     port: config.port,
     secure: config.secure,
+    family: 4 as const,
     auth: username ? { user: username, pass: password ?? "" } : undefined,
-  });
+  };
+}
+
+function buildTransport(config: MailConfig) {
+  return nodemailer.createTransport(buildSmtpTransportOptions(config));
 }
 
 export function parseRecipients(value: string): string[] {
