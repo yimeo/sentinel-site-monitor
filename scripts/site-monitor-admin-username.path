@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch Sentinel local administrator username requests
+
+[Path]
+PathChanged=/var/lib/site-monitor/admin-auth.request
+PathExists=/var/lib/site-monitor/admin-auth.request
+Unit=site-monitor-admin-username.service
+
+[Install]
+WantedBy=multi-user.target

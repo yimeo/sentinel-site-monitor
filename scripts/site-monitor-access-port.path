@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch Sentinel access port requests
+
+[Path]
+PathChanged=/var/lib/site-monitor/access-port.request
+PathExists=/var/lib/site-monitor/access-port.request
+Unit=site-monitor-access-port.service
+
+[Install]
+WantedBy=multi-user.target

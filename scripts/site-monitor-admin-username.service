@@ -1,0 +1,6 @@
+[Unit]
+Description=Apply Sentinel local administrator username request
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/site-monitor-apply-admin-username

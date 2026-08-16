@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1786709880389,
+      "tag": "0000_lethal_tarot",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1786710083236,
+      "tag": "0001_absurd_malcolm_colcord",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786710141016,
+      "tag": "0002_vengeful_korg",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1786710740000,
+      "tag": "0003_local_users_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1786711168627,
+      "tag": "0004_rare_banshee",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1786774297365,
+      "tag": "0005_amazing_mandarin",
+      "breakpoints": true
+    }
+  ]
+}
