@@ -1,0 +1,21 @@
+import fs from "node:fs";
+
+const file = "client/src/pages/Settings.tsx";
+let source = fs.readFileSync(file, "utf8");
+const cardPrefix = '<Card className="border-slate-200/80 bg-white shadow-[0_12px_28px_-22px_rgba(15,23,42,0.28)]"><CardHeader><div className="flex items-center gap-3"><div className="grid h-9 w-9 place-items-center rounded-xl bg-violet-50';
+const domainStart = source.indexOf(cardPrefix);
+if (domainStart < 0) throw new Error("域名主卡片未找到");
+const cardEndMarker = "</Card></div></section>";
+const domainEnd = source.indexOf(cardEndMarker, domainStart);
+if (domainEnd < 0) throw new Error("域名主卡片结束边界未找到");
+const domainCard = source.slice(domainStart, domainEnd + "</Card>".length);
+source = source.slice(0, domainStart) + source.slice(domainEnd + "</Card>".length);
+const outerEndMarker = "</div></section>";
+const rightColumnStart = source.indexOf('<div className="space-y-5">');
+if (rightColumnStart < 0) throw new Error("右侧辅助列起点未找到");
+const outerEnd = source.indexOf(outerEndMarker, rightColumnStart);
+if (outerEnd < 0) throw new Error("设置主网格结束边界未找到");
+const insert = `</div></section>\n\n    <section className="mt-5">${domainCard}</section>`;
+source = source.slice(0, outerEnd) + insert + source.slice(outerEnd + outerEndMarker.length);
+fs.writeFileSync(file, source);
+console.log("Reflowed domain/access/SSL card into an independent full-width section.");
