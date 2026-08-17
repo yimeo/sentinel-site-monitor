@@ -36,7 +36,7 @@ if [[ -n "$previous_port" ]]; then validate_port "$previous_port" || previous_po
 backup_file="${VHOST_FILE}.bak.$(date +%Y%m%d%H%M%S)"
 cp -a "$VHOST_FILE" "$backup_file"
 if ! grep -qF "$BEGIN_MARKER" "$VHOST_FILE"; then
-  sed -i "/^[[:space:]]*listen ${BASE_ACCESS_PORT};[[:space:]]*$/a\\    $BEGIN_MARKER\\n    $END_MARKER" "$VHOST_FILE"
+  sed -i "/^[[:space:]]*listen[[:space:]]\\+${BASE_ACCESS_PORT}\\([[:space:]][^;]*\\)\\?;[[:space:]]*$/a\\    $BEGIN_MARKER\\n    $END_MARKER" "$VHOST_FILE"
 fi
 
 tmp_file="$(mktemp)"
