@@ -26,7 +26,7 @@ export const customTlsInput = z.object({
   privateKey: z.string().min(64).max(120_000),
   certificateChain: z.string().max(240_000).nullable().optional(),
   allowInsecureTransport: z.boolean().default(false),
-}).transform(value => validateCustomTls(value));
+}).transform(value => ({ ...validateCustomTls(value), allowInsecureTransport: value.allowInsecureTransport }));
 
 export const localAdminPasswordInput = z.object({
   password: z.string().min(12, "管理员密码至少需要 12 个字符。").max(256),
