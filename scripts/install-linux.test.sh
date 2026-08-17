@@ -20,6 +20,10 @@ grep -Fq 'elif systemctl enable --now crond.service >/dev/null 2>&1; then' "$INS
 grep -Fq 'systemctl enable site-monitor site-monitor-access-port.path nginx' "$INSTALLER"
 grep -Fq 'systemctl restart site-monitor' "$INSTALLER"
 grep -Fq 'systemctl start site-monitor-access-port.path nginx' "$INSTALLER"
+grep -Fq 'APP_PORT=${APP_PORT}' "$INSTALLER"
+grep -Fq 'TLS_SETTINGS_REQUEST_PATH=/var/lib/site-monitor/tls-settings.request' "$INSTALLER"
+grep -Fq 'TLS_CERT_DIR=/etc/site-monitor/tls' "$INSTALLER"
+grep -Fq 'TLS_STATUS_PATH=/var/lib/site-monitor/tls-status.json' "$INSTALLER"
 grep -Fq 'HOME=/var/lib/site-monitor/home' "$SCRIPT_DIR/deploy-bt-isolated.sh" || true
 grep -Fq 'PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin"' "$INSTALLER"
 

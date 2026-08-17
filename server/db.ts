@@ -7,6 +7,7 @@ import { ENV } from "./_core/env";
 import { formatAccessPortRequest } from "./monitoring/access";
 import { formatAdminUsernameRequest } from "./monitoring/adminAuth";
 import type { MonitorTaskTransfer } from "./monitoring/taskTransfer";
+import { formatTlsSettingsRequest, type TlsSettingsInput } from "./monitoring/tls";
 
 export type MailTemplates = {
   alertSubject: string;
@@ -274,12 +275,23 @@ export async function getMonitorTaskById(id: number) {
 
 type ScheduleTask = Pick<MonitorTask, "id" | "intervalMinutes" | "lastCheckedAt">;
 
-function getNextCheckAt(intervalMinutes: number, offsetMinutes: number, reference = new Date()) {
+const SCHEDULER_TICK_MS = 10_000;
+
+function getNextCheckAt(intervalMinutes: number, offsetTicks: number, reference = new Date()) {
   const intervalMs = Math.max(1, intervalMinutes) * 60_000;
-  const slotOffsetMs = ((offsetMinutes % intervalMinutes) + intervalMinutes) % intervalMinutes * 60_000;
+  const ticksPerWindow = Math.max(1, Math.floor(intervalMs / SCHEDULER_TICK_MS));
+  const slotOffsetMs = ((offsetTicks % ticksPerWindow) + ticksPerWindow) % ticksPerWindow * SCHEDULER_TICK_MS;
   const windowStart = Math.floor(reference.getTime() / intervalMs) * intervalMs;
   const candidate = windowStart + slotOffsetMs;
   return new Date(candidate > reference.getTime() ? candidate : candidate + intervalMs);
+}
+
+function taskSlotOffset(taskId: number, index: number, total: number, ticksPerWindow: number, randomize: boolean) {
+  const start = Math.floor(index * ticksPerWindow / total);
+  const nextStart = Math.floor((index + 1) * ticksPerWindow / total);
+  const width = Math.max(1, nextStart - start);
+  const jitter = randomize ? crypto.randomInt(width) : Math.abs((taskId * 2_654_435_761) % width);
+  return Math.min(ticksPerWindow - 1, start + jitter);
 }
 
 function scheduleTaskGroup(db: Database, tasks: ScheduleTask[], reference: Date, randomize = false) {
@@ -298,10 +310,10 @@ function scheduleTaskGroup(db: Database, tasks: ScheduleTask[], reference: Date,
         [ordered[index], ordered[swapIndex]] = [ordered[swapIndex]!, ordered[index]!];
       }
     }
-    const startOffset = randomize ? crypto.randomInt(intervalMinutes) : 0;
+    const ticksPerWindow = Math.max(1, intervalMinutes * 60_000 / SCHEDULER_TICK_MS);
     ordered.forEach((task, index) => {
       const minimumTime = task.lastCheckedAt ? new Date(Math.max(reference.getTime(), task.lastCheckedAt.getTime() + intervalMinutes * 60_000)) : reference;
-      const nextCheckAt = getNextCheckAt(intervalMinutes, startOffset + index, minimumTime).toISOString();
+      const nextCheckAt = getNextCheckAt(intervalMinutes, taskSlotOffset(task.id, index, ordered.length, ticksPerWindow, randomize), minimumTime).toISOString();
       db.run("UPDATE monitor_tasks SET nextCheckAt = ?, updatedAt = ? WHERE id = ?", [nextCheckAt, now(), task.id]);
       scheduled += 1;
     });
@@ -317,7 +329,8 @@ export async function createMonitorTask(input: typeof import("../drizzle/schema"
     const row = selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE id = last_insert_rowid() LIMIT 1")[0];
     if (row) {
       const intervalMinutes = Number(row.intervalMinutes);
-      db.run("UPDATE monitor_tasks SET nextCheckAt = ? WHERE id = ?", [getNextCheckAt(intervalMinutes, Number(row.id) % intervalMinutes).toISOString(), Number(row.id)]);
+      const ticksPerWindow = Math.max(1, intervalMinutes * 60_000 / SCHEDULER_TICK_MS);
+      db.run("UPDATE monitor_tasks SET nextCheckAt = ? WHERE id = ?", [getNextCheckAt(intervalMinutes, Number(row.id) % ticksPerWindow).toISOString(), Number(row.id)]);
     }
     return row ? mapTask(row) : undefined;
   });
@@ -356,7 +369,8 @@ export async function updateMonitorTask(ownerId: number, id: number, values: Par
     }
     if (values.intervalMinutes !== undefined) {
       const intervalMinutes = Number(values.intervalMinutes);
-      db.run("UPDATE monitor_tasks SET nextCheckAt = ? WHERE ownerId = ? AND id = ?", [getNextCheckAt(intervalMinutes, id % intervalMinutes).toISOString(), ownerId, id]);
+      const ticksPerWindow = Math.max(1, intervalMinutes * 60_000 / SCHEDULER_TICK_MS);
+      db.run("UPDATE monitor_tasks SET nextCheckAt = ? WHERE ownerId = ? AND id = ?", [getNextCheckAt(intervalMinutes, id % ticksPerWindow).toISOString(), ownerId, id]);
     }
     const row = selectRows<Row>(db, "SELECT * FROM monitor_tasks WHERE ownerId = ? AND id = ? LIMIT 1", [ownerId, id])[0];
     return row ? mapTask(row) : undefined;
@@ -496,6 +510,14 @@ export async function requestAccessSettingsChange(values: Pick<SiteSettings, "pu
     await fs.writeFile(requestPath, request, { mode: 0o600 });
   }
   return updateSiteSettings(values);
+}
+
+export async function requestCustomTlsSettings(input: TlsSettingsInput) {
+  const requestPath = process.env.TLS_SETTINGS_REQUEST_PATH ?? (process.env.LOCAL_DEPLOYMENT === "true" ? "/var/lib/site-monitor/tls-settings.request" : undefined);
+  if (!requestPath) throw new Error("当前部署未启用自定义 SSL 证书同步服务。");
+  await fs.mkdir(path.dirname(requestPath), { recursive: true });
+  await fs.writeFile(requestPath, formatTlsSettingsRequest(input), { mode: 0o600 });
+  return { hostname: input.hostname };
 }
 
 export async function requestLocalAdminPasswordChange(password: string, passwordHash: string) {

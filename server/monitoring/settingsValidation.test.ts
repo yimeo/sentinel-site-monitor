@@ -26,10 +26,11 @@ describe("安全与通知设置输入校验", () => {
     expect(mailTemplatesInput.safeParse({ ...validTemplates, alertBody: "b".repeat(20_001) }).success).toBe(false);
   });
 
-  it("仅接受完整 URL 与受支持的管理端口", () => {
-    expect(accessSettingsInput.safeParse({ publicUrl: "monitor.example.com", requestedPort: 8080 }).success).toBe(false);
+  it("接受无协议域名与受支持的管理端口", () => {
+    expect(accessSettingsInput.safeParse({ publicUrl: "monitor.example.com", requestedPort: 8080 }).data?.publicUrl).toBe("monitor.example.com");
     expect(accessSettingsInput.safeParse({ publicUrl: null, requestedPort: 443 }).success).toBe(false);
-    expect(accessSettingsInput.safeParse({ publicUrl: "https://monitor.example.com", requestedPort: 8080 }).success).toBe(true);
+    expect(accessSettingsInput.safeParse({ publicUrl: "https://monitor.example.com", requestedPort: 8080 }).data?.publicUrl).toBe("monitor.example.com");
+    expect(accessSettingsInput.safeParse({ publicUrl: "monitor.example.com/path", requestedPort: 8080 }).success).toBe(false);
     expect(accessSettingsInput.safeParse({ publicUrl: null, requestedPort: 65_535 }).success).toBe(true);
     expect(accessSettingsInput.safeParse({ publicUrl: null, requestedPort: 65_536 }).success).toBe(false);
   });

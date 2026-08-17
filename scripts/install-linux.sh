@@ -86,12 +86,16 @@ CURL_BIN="$(command -v curl)"
 cat >/etc/site-monitor.env <<EOF
 NODE_ENV=production
 PORT=${APP_PORT}
+APP_PORT=${APP_PORT}
 BIND_HOST=127.0.0.1
 LOCAL_DEPLOYMENT=true
 SQLITE_DB_PATH=${APP_DIR}/data/site-monitor.sqlite
 JWT_SECRET=${JWT_SECRET}
 LOCAL_SCHEDULER_TOKEN=${LOCAL_SCHEDULER_TOKEN}
 ACCESS_SETTINGS_REQUEST_PATH=/var/lib/site-monitor/access-port.request
+TLS_SETTINGS_REQUEST_PATH=/var/lib/site-monitor/tls-settings.request
+TLS_CERT_DIR=/etc/site-monitor/tls
+TLS_STATUS_PATH=/var/lib/site-monitor/tls-status.json
 VHOST_FILE=${VHOST_FILE}
 NGINX_BIN=${NGINX_BIN}
 BASE_ACCESS_PORT=${PUBLIC_PORT}

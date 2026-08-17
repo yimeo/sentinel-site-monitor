@@ -4,6 +4,8 @@ Description=Watch Sentinel access port requests
 [Path]
 PathChanged=/var/lib/site-monitor/access-port.request
 PathExists=/var/lib/site-monitor/access-port.request
+PathChanged=/var/lib/site-monitor/tls-settings.request
+PathExists=/var/lib/site-monitor/tls-settings.request
 Unit=site-monitor-access-port.service
 
 [Install]

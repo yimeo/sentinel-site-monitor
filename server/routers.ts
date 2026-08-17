@@ -9,7 +9,7 @@ import { createSchedulerToken, encryptSecret, hashPassword, hashToken, verifyPas
 import { validateMonitorUrl } from "./monitoring/engine";
 import { parseRecipients, sendTestEmail, verifySmtp } from "./monitoring/mail";
 import { runMonitorTask, runMonitorTasks } from "./monitoring/service";
-import { accessSettingsInput, localAdminPasswordInput, localAdminUsernameInput, mailTemplatesInput } from "./monitoring/settingsValidation";
+import { accessSettingsInput, customTlsInput, localAdminPasswordInput, localAdminUsernameInput, mailTemplatesInput } from "./monitoring/settingsValidation";
 import { createMonitorTaskBackup, monitorTaskBackupSchema, monitorTaskTransferSchema } from "./monitoring/taskTransfer";
 
 const taskInput = monitorTaskTransferSchema;
@@ -258,9 +258,12 @@ export const appRouter = router({
       };
     }),
     saveMailTemplates: protectedProcedure.input(mailTemplatesInput).mutation(({ input }) => db.updateSiteSettings(input)),
-    saveAccessSettings: protectedProcedure.input(accessSettingsInput).mutation(async ({ input }) => {
-      const publicUrl = input.publicUrl?.replace(/\/$/, "") || null;
-      return db.requestAccessSettingsChange({ publicUrl, requestedPort: input.requestedPort });
+    saveAccessSettings: protectedProcedure.input(accessSettingsInput).mutation(async ({ input }) => db.requestAccessSettingsChange({ publicUrl: input.publicUrl, requestedPort: input.requestedPort })),
+    saveCustomTls: protectedProcedure.input(customTlsInput).mutation(async ({ ctx, input }) => {
+      if (process.env.LOCAL_DEPLOYMENT === "true" && ctx.req.headers["x-forwarded-proto"] !== "https") {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请先通过 HTTPS 访问管理界面，再提交私钥和证书。" });
+      }
+      return db.requestCustomTlsSettings(input);
     }),
     changeLocalPassword: protectedProcedure.input(localAdminPasswordInput).mutation(async ({ input }) => {
       const passwordHash = await hashPassword(input.password);
