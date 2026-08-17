@@ -143,7 +143,13 @@ install -m 700 "$APP_DIR/scripts/apply-access-port.sh" /usr/local/sbin/site-moni
 install -m 644 "$APP_DIR/scripts/site-monitor-access-port.service" "$APP_DIR/scripts/site-monitor-access-port.path" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now site-monitor site-monitor-access-port.path nginx
-if systemctl list-unit-files | grep -q '^cron\.service'; then systemctl enable --now cron; else systemctl enable --now crond; fi
+if systemctl cat cron.service >/dev/null 2>&1; then
+  systemctl enable --now cron.service
+elif systemctl cat crond.service >/dev/null 2>&1; then
+  systemctl enable --now crond.service
+else
+  fail "未找到 cron 或 crond systemd 服务。"
+fi
 cat >/etc/cron.d/site-monitor <<EOF
 # Sentinel：每分钟启动一次，在每 10 秒扫描到期任务；本机令牌仅保存在 root 可读文件中。
 * * * * * root for delay in 0 10 20 30 40 50; do ( sleep \$delay; ${CURL_BIN} -fsS --max-time 8 -X POST -H 'Authorization: Bearer ${LOCAL_SCHEDULER_TOKEN}' http://127.0.0.1:${APP_PORT}/api/scheduled/monitor-run >> /var/log/site-monitor-cron.log 2>&1 ) & done; wait
