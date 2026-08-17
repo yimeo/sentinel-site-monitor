@@ -124,6 +124,7 @@
 - [x] 修复 Ubuntu 通用安装器错误启用 crond.service 的问题：直接尝试启用 cron.service，失败后回退 crond.service，完成 163.5.85.125 的 cron 调度恢复与验证；cron.service 为 active。
 - [x] 修复通用安装器重装时未重启 site-monitor 导致新调度令牌返回 401 的问题，并在 163.5.85.125 验证首次调度请求成功；新周期日志持续返回 {"ok":true,"checked":0,"results":[]}。
 - [ ] 在 163.5.85.125:80 真实打开 Sentinel，验证首次访问进入管理员初始化页，并完成初始化/登录流程的浏览器验收。
-- [ ] 修复 163.5.85.125 上从管理界面将外部访问端口切换至 18080 后未新增 18080 监听的问题：端口同步脚本需兼容 `listen 80 default_server`，并验证 Nginx 监听和公网访问；80 作为安装期回退入口可继续保留。
+- [x] 修复 163.5.85.125 上从管理界面将外部访问端口切换至 18080 后未新增 18080 监听的问题：端口同步脚本已兼容 `listen 80 default_server`；Nginx 已监听 18080，本机与公网 `http://163.5.85.125:18080/` 均返回 HTTP 200。80 保留为安装期回退入口。
+- [ ] 在 163.5.85.125 的设置页再次保存外部访问端口 18080，记录请求文件生成、同步服务触发、Nginx 监听与公网 HTTP 200 的完整端到端验收。
 
 现场记录：ai102 首次失败发生在 `[4/8] 安装依赖并构建`，日志为 `runuser: failed to execute pnpm: No such file or directory`；此前宝塔隔离脚本因未找到 `/www/server/nginx/sbin/nginx` 正确拒绝执行，Ubuntu 应使用通用 `remote-install.sh`。
