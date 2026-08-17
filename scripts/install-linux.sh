@@ -6,7 +6,14 @@ APP_DIR="${APP_DIR:-/opt/sentinel-site-monitor}"
 APP_USER="${APP_USER:-site-monitor}"
 APP_PORT="${APP_PORT:-3201}"
 PUBLIC_PORT="${PUBLIC_PORT:-80}"
-NODE_VERSION="${NODE_VERSION:-16.20.2}"
+if [[ -z "${NODE_VERSION:-}" ]]; then
+  if [[ -f /etc/centos-release ]] && grep -qE 'release[[:space:]]+7([.[:space:]]|$)' /etc/centos-release; then
+    NODE_VERSION="16.20.2"
+  else
+    NODE_VERSION="20.19.2"
+  fi
+fi
+PNPM_VERSION="${PNPM_VERSION:-$( [[ "${NODE_VERSION%%.*}" -lt 18 ]] && echo 8.15.9 || echo 10 )}"
 
 fail() { echo "错误：$*" >&2; exit 1; }
 [[ "${EUID}" -eq 0 ]] || fail "请使用 sudo bash scripts/install-linux.sh 执行。"
@@ -49,7 +56,7 @@ fi
 ln -sfn "$NODE_DIR/bin/node" /usr/local/bin/node
 ln -sfn "$NODE_DIR/bin/npm" /usr/local/bin/npm
 ln -sfn "$NODE_DIR/bin/npx" /usr/local/bin/npx
-"$NODE_DIR/bin/npm" install -g pnpm@8
+"$NODE_DIR/bin/npm" install -g --prefix "$NODE_DIR" "pnpm@${PNPM_VERSION}"
 
 echo "[3/8] 创建应用目录和服务账号…"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --no-create-home --shell /sbin/nologin "$APP_USER"
@@ -59,8 +66,16 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR" /var/lib/site-monitor
 
 echo "[4/8] 安装依赖并构建…"
 cd "$APP_DIR"
-runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/pnpm" install --frozen-lockfile
-runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/pnpm" build
+if [[ "${NODE_VERSION%%.*}" -lt 18 ]]; then
+  runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/npm" install --omit=dev --legacy-peer-deps --ignore-scripts --no-audit --no-fund
+else
+  runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/pnpm" install --no-frozen-lockfile
+fi
+if [[ -f "$APP_DIR/dist/index.js" && -d "$APP_DIR/dist/public" ]]; then
+  echo "检测到预构建 dist，跳过构建。"
+else
+  runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/pnpm" build
+fi
 
 echo "[5/8] 创建运行环境与应用服务…"
 JWT_SECRET="$(openssl rand -hex 32)"
