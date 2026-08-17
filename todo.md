@@ -120,5 +120,6 @@
 - [x] 修复 Ubuntu 20.04 通用安装器在依赖安装阶段调用不存在的 pnpm：改为使用隔离 Node.js 目录的绝对 pnpm 路径并显式设置 HOME/PATH；已通过 Bash 语法检查、Ubuntu 安装器专项回归测试、54 项 Vitest 和生产构建。
 - [ ] 修复 Ubuntu 20.04 通用安装器与 lockfile v9/Vite 构建链的版本兼容性：Ubuntu 使用 Node.js 20 与 pnpm 10，CentOS 7 保持 Node.js 16 与兼容的 npm 生产依赖路径。
 - [ ] 在已重装 Ubuntu 20.04 的 163.5.85.125 重新执行通用安装器，验证 systemd、Nginx、80 端口入口、cron 和首次登录流程。
+- [ ] 修复 Ubuntu 通用安装器在 80 端口替换默认 Nginx 站点时产生 duplicate default server 的问题，并在 163.5.85.125 验证 Nginx 配置与入口恢复正常。
 
 现场记录：ai102 首次失败发生在 `[4/8] 安装依赖并构建`，日志为 `runuser: failed to execute pnpm: No such file or directory`；此前宝塔隔离脚本因未找到 `/www/server/nginx/sbin/nginx` 正确拒绝执行，Ubuntu 应使用通用 `remote-install.sh`。

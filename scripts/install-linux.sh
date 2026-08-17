@@ -118,7 +118,9 @@ EOF
 
 echo "[6/8] 配置 Nginx 反向代理…"
 if [[ "$PUBLIC_PORT" == "80" && -f /etc/nginx/sites-enabled/default ]]; then
-  mv /etc/nginx/sites-enabled/default "/etc/nginx/sites-enabled/default.sentinel-backup.$(date +%s)"
+  NGINX_BACKUP_DIR="/etc/nginx/sentinel-backups"
+  install -d -m 700 "$NGINX_BACKUP_DIR"
+  mv /etc/nginx/sites-enabled/default "$NGINX_BACKUP_DIR/default.$(date +%s).conf"
 fi
 cat >"$VHOST_FILE" <<EOF
 server {

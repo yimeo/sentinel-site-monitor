@@ -13,6 +13,8 @@ grep -Fq '"$NODE_DIR/bin/npm" install -g --prefix "$NODE_DIR" "pnpm@${PNPM_VERSI
 grep -Fq '"$NODE_DIR/bin/pnpm" install --no-frozen-lockfile' "$INSTALLER"
 grep -Fq '"$NODE_DIR/bin/npm" install --omit=dev --legacy-peer-deps --ignore-scripts --no-audit --no-fund' "$INSTALLER"
 grep -Fq '"$NODE_DIR/bin/pnpm" build' "$INSTALLER"
+grep -Fq 'NGINX_BACKUP_DIR="/etc/nginx/sentinel-backups"' "$INSTALLER"
+grep -Fq 'mv /etc/nginx/sites-enabled/default "$NGINX_BACKUP_DIR/default.$(date +%s).conf"' "$INSTALLER"
 grep -Fq 'HOME=/var/lib/site-monitor/home' "$SCRIPT_DIR/deploy-bt-isolated.sh" || true
 grep -Fq 'PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin"' "$INSTALLER"
 
