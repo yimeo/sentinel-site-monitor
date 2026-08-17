@@ -117,7 +117,7 @@
 
 来源：用户反馈。
 
-- [ ] 修复 Ubuntu 20.04 通用安装器在依赖安装阶段调用不存在的 pnpm：改为安装并固定兼容版本后再执行生产依赖安装，补充 Ubuntu 分支回归测试。
+- [x] 修复 Ubuntu 20.04 通用安装器在依赖安装阶段调用不存在的 pnpm：改为使用隔离 Node.js 目录的绝对 pnpm 路径并显式设置 HOME/PATH；已通过 Bash 语法检查、Ubuntu 安装器专项回归测试、54 项 Vitest 和生产构建。
 - [ ] 发布 Ubuntu 安装修复并在 ai102 重新执行一键安装，验证 systemd、Nginx、18080 入口、cron 和首次登录流程。
 
 现场记录：ai102 首次失败发生在 `[4/8] 安装依赖并构建`，日志为 `runuser: failed to execute pnpm: No such file or directory`；此前宝塔隔离脚本因未找到 `/www/server/nginx/sbin/nginx` 正确拒绝执行，Ubuntu 应使用通用 `remote-install.sh`。
