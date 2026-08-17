@@ -13,6 +13,8 @@ grep -Fq 'listen 443 ssl http2;' "$SCRIPT"
 grep -Fq 'ssl_certificate ${TLS_CERT_DIR}/${hostname}.fullchain.pem;' "$SCRIPT"
 grep -Fq 'openssl x509 -in "$staging/certificate.pem" -noout -checkend 1' "$SCRIPT"
 grep -Fq 'TLS certificate and private key do not match' "$SCRIPT"
+grep -Fq 'requested_port" != "$previous_port"' "$SCRIPT"
+grep -Fq 'already in use by another listener' "$SCRIPT"
 
 fixture="$(mktemp)"
 trap 'rm -f "$fixture"' EXIT

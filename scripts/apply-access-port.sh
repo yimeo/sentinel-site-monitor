@@ -32,10 +32,10 @@ apply_access_port() {
   previous_port="$(awk -F= '$1 == "previousPort" { print $2; exit }' "$REQUEST_FILE")"
   if [[ -n "$requested_port" ]]; then
     validate_port "$requested_port" || { echo "Invalid requested port" >&2; exit 1; }
-    if [[ "$requested_port" != "80" ]] && ss -ltnH "( sport = :$requested_port )" | grep -q .; then
-      echo "Requested port $requested_port is already in use" >&2
-      exit 1
-    fi
+  if [[ "$requested_port" != "80" ]] && [[ "$requested_port" != "$previous_port" ]] && ! grep -Eq "^[[:space:]]*listen[[:space:]]+$requested_port([[:space:];]|$)" "$VHOST_FILE" && ss -ltnH "( sport = :$requested_port )" | grep -q .; then
+    echo "Requested port $requested_port is already in use by another listener" >&2
+    exit 1
+  fi
   fi
   if [[ -n "$previous_port" ]]; then validate_port "$previous_port" || previous_port=""; fi
 
