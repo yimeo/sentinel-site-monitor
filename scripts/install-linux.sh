@@ -142,7 +142,9 @@ echo "[7/8] 启用服务、端口同步与 cron 调度…"
 install -m 700 "$APP_DIR/scripts/apply-access-port.sh" /usr/local/sbin/site-monitor-apply-access-port
 install -m 644 "$APP_DIR/scripts/site-monitor-access-port.service" "$APP_DIR/scripts/site-monitor-access-port.path" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now site-monitor site-monitor-access-port.path nginx
+systemctl enable site-monitor site-monitor-access-port.path nginx
+systemctl restart site-monitor
+systemctl start site-monitor-access-port.path nginx
 if systemctl enable --now cron.service >/dev/null 2>&1; then
   :
 elif systemctl enable --now crond.service >/dev/null 2>&1; then

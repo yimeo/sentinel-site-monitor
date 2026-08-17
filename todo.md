@@ -122,5 +122,6 @@
 - [ ] 在已重装 Ubuntu 20.04 的 163.5.85.125 重新执行通用安装器，验证 systemd、Nginx、80 端口入口、cron 和首次登录流程。
 - [ ] 修复 Ubuntu 通用安装器在 80 端口替换默认 Nginx 站点时产生 duplicate default server 的问题，并在 163.5.85.125 验证 Nginx 配置与入口恢复正常。
 - [ ] 修复 Ubuntu 通用安装器错误启用 crond.service 的问题：直接尝试启用 cron.service，失败后回退 crond.service，完成 163.5.85.125 的 cron 调度恢复与验证。
+- [ ] 修复通用安装器重装时未重启 site-monitor 导致新调度令牌返回 401 的问题，并在 163.5.85.125 验证首次调度请求成功。
 
 现场记录：ai102 首次失败发生在 `[4/8] 安装依赖并构建`，日志为 `runuser: failed to execute pnpm: No such file or directory`；此前宝塔隔离脚本因未找到 `/www/server/nginx/sbin/nginx` 正确拒绝执行，Ubuntu 应使用通用 `remote-install.sh`。
