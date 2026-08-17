@@ -33,7 +33,7 @@ import { parse as parseCookieHeader2 } from "cookie";
 
 // server/db.ts
 import fs from "node:fs/promises";
-import crypto from "node:crypto";
+import crypto2 from "node:crypto";
 import path from "node:path";
 import initSqlJs from "sql.js";
 
@@ -64,6 +64,50 @@ previousPort=${previousPort ?? ""}
 
 // server/monitoring/adminAuth.ts
 var localAdminUsernamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/;
+
+// server/monitoring/tls.ts
+import crypto from "node:crypto";
+var hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+function normalizeAccessHostname(value) {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("\u8BF7\u8F93\u5165\u57DF\u540D\uFF0C\u4F8B\u5982 monitor.example.com\u3002");
+  const withoutProtocol = trimmed.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  if (withoutProtocol.includes("/") || withoutProtocol.includes(":") || !hostnamePattern.test(withoutProtocol)) {
+    throw new Error("\u8BF7\u8F93\u5165\u6709\u6548\u57DF\u540D\uFF0C\u4F8B\u5982 monitor.example.com\uFF1B\u65E0\u9700\u586B\u5199 http:// \u6216 https://\u3002");
+  }
+  return withoutProtocol.toLowerCase();
+}
+function validateCustomTls(input) {
+  var _a;
+  const hostname = normalizeAccessHostname(input.hostname);
+  const certificate = input.certificate.trim();
+  const privateKey = input.privateKey.trim();
+  const certificateChain = ((_a = input.certificateChain) == null ? void 0 : _a.trim()) || null;
+  if (!certificate.includes("-----BEGIN CERTIFICATE-----")) throw new Error("\u8BC1\u4E66\u5185\u5BB9\u4E0D\u662F\u6709\u6548\u7684 PEM \u8BC1\u4E66\u3002");
+  if (!privateKey.includes("-----BEGIN") || !privateKey.includes("PRIVATE KEY-----")) throw new Error("\u79C1\u94A5\u5185\u5BB9\u4E0D\u662F\u6709\u6548\u7684 PEM \u79C1\u94A5\u3002");
+  try {
+    const x509 = new crypto.X509Certificate(certificate);
+    const key = crypto.createPrivateKey(privateKey);
+    if (!x509.checkPrivateKey(key)) throw new Error("\u79C1\u94A5\u4E0E\u8BC1\u4E66\u4E0D\u5339\u914D\u3002");
+    if (x509.validTo && new Date(x509.validTo).getTime() <= Date.now()) throw new Error("\u8BC1\u4E66\u5DF2\u7ECF\u8FC7\u671F\u3002");
+  } catch (error) {
+    throw new Error(error instanceof Error && error.message ? `\u8BC1\u4E66\u6821\u9A8C\u5931\u8D25\uFF1A${error.message}` : "\u8BC1\u4E66\u6216\u79C1\u94A5\u6821\u9A8C\u5931\u8D25\u3002");
+  }
+  if (certificateChain && !certificateChain.includes("-----BEGIN CERTIFICATE-----")) throw new Error("\u8BC1\u4E66\u94FE\u5FC5\u987B\u662F PEM \u683C\u5F0F\u8BC1\u4E66\u3002");
+  return { hostname, certificate: `${certificate}
+`, privateKey: `${privateKey}
+`, certificateChain: certificateChain ? `${certificateChain}
+` : null };
+}
+function formatTlsSettingsRequest(input) {
+  const valid = validateCustomTls(input);
+  const encode = (value) => value ? Buffer.from(value, "utf8").toString("base64") : "";
+  return `hostname=${valid.hostname}
+certificateBase64=${encode(valid.certificate)}
+privateKeyBase64=${encode(valid.privateKey)}
+certificateChainBase64=${encode(valid.certificateChain)}
+`;
+}
 
 // server/db.ts
 var defaultMailTemplates = {
@@ -273,8 +317,8 @@ async function initializeLocalAdmin(username, passwordHash) {
   return await getUserByOpenId("local-admin");
 }
 async function createLocalSession(userId, maxAgeMs) {
-  const token = crypto.randomBytes(32).toString("base64url");
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const token = crypto2.randomBytes(32).toString("base64url");
+  const tokenHash = crypto2.createHash("sha256").update(token).digest("hex");
   const createdAt = now();
   const expiresAt = new Date(Date.now() + maxAgeMs).toISOString();
   await write((db) => {
@@ -285,7 +329,7 @@ async function createLocalSession(userId, maxAgeMs) {
 }
 async function getLocalSessionUser(token) {
   if (!token) return void 0;
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const tokenHash = crypto2.createHash("sha256").update(token).digest("hex");
   return read((db) => {
     const row = selectRows(db, `SELECT users.* FROM local_sessions INNER JOIN users ON users.id = local_sessions.userId
       WHERE local_sessions.tokenHash = ? AND local_sessions.expiresAt > ? LIMIT 1`, [tokenHash, now()])[0];
@@ -294,7 +338,7 @@ async function getLocalSessionUser(token) {
 }
 async function deleteLocalSession(token) {
   if (!token) return;
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+  const tokenHash = crypto2.createHash("sha256").update(token).digest("hex");
   await write((db) => db.run("DELETE FROM local_sessions WHERE tokenHash = ?", [tokenHash]));
 }
 async function listMonitorTasks(ownerId) {
@@ -319,7 +363,7 @@ function taskSlotOffset(taskId, index, total, ticksPerWindow, randomize) {
   const start = Math.floor(index * ticksPerWindow / total);
   const nextStart = Math.floor((index + 1) * ticksPerWindow / total);
   const width = Math.max(1, nextStart - start);
-  const jitter = randomize ? crypto.randomInt(width) : Math.abs(taskId * 2654435761 % width);
+  const jitter = randomize ? crypto2.randomInt(width) : Math.abs(taskId * 2654435761 % width);
   return Math.min(ticksPerWindow - 1, start + jitter);
 }
 function scheduleTaskGroup(db, tasks, reference, randomize = false) {
@@ -334,7 +378,7 @@ function scheduleTaskGroup(db, tasks, reference, randomize = false) {
     const ordered = [...group].sort((left, right) => left.id - right.id);
     if (randomize) {
       for (let index = ordered.length - 1; index > 0; index -= 1) {
-        const swapIndex = crypto.randomInt(index + 1);
+        const swapIndex = crypto2.randomInt(index + 1);
         [ordered[index], ordered[swapIndex]] = [ordered[swapIndex], ordered[index]];
       }
     }
@@ -536,6 +580,13 @@ async function requestAccessSettingsChange(values) {
     await fs.writeFile(requestPath, request, { mode: 384 });
   }
   return updateSiteSettings(values);
+}
+async function requestCustomTlsSettings(input) {
+  const requestPath = process.env.TLS_SETTINGS_REQUEST_PATH ?? (process.env.LOCAL_DEPLOYMENT === "true" ? "/var/lib/site-monitor/tls-settings.request" : void 0);
+  if (!requestPath) throw new Error("\u5F53\u524D\u90E8\u7F72\u672A\u542F\u7528\u81EA\u5B9A\u4E49 SSL \u8BC1\u4E66\u540C\u6B65\u670D\u52A1\u3002");
+  await fs.mkdir(path.dirname(requestPath), { recursive: true });
+  await fs.writeFile(requestPath, formatTlsSettingsRequest(input), { mode: 384 });
+  return { hostname: input.hostname };
 }
 
 // server/_core/cookies.ts
@@ -1050,15 +1101,15 @@ var systemRouter = router({
 });
 
 // server/monitoring/crypto.ts
-import crypto2 from "node:crypto";
+import crypto3 from "node:crypto";
 var getKey = () => {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("\u5E94\u7528\u52A0\u5BC6\u5BC6\u94A5\u4E0D\u53EF\u7528\uFF0C\u8BF7\u8BBE\u7F6E JWT_SECRET\u3002");
-  return crypto2.createHash("sha256").update(secret).digest();
+  return crypto3.createHash("sha256").update(secret).digest();
 };
 function encryptSecret(value) {
-  const iv = crypto2.randomBytes(12);
-  const cipher = crypto2.createCipheriv("aes-256-gcm", getKey(), iv);
+  const iv = crypto3.randomBytes(12);
+  const cipher = crypto3.createCipheriv("aes-256-gcm", getKey(), iv);
   const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [iv.toString("base64url"), tag.toString("base64url"), encrypted.toString("base64url")].join(".");
@@ -1066,7 +1117,7 @@ function encryptSecret(value) {
 function decryptSecret(value) {
   const [ivValue, tagValue, encryptedValue] = value.split(".");
   if (!ivValue || !tagValue || !encryptedValue) throw new Error("\u4FDD\u5B58\u7684\u51ED\u636E\u683C\u5F0F\u65E0\u6548\u3002");
-  const decipher = crypto2.createDecipheriv("aes-256-gcm", getKey(), Buffer.from(ivValue, "base64url"));
+  const decipher = crypto3.createDecipheriv("aes-256-gcm", getKey(), Buffer.from(ivValue, "base64url"));
   decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
   return Buffer.concat([
     decipher.update(Buffer.from(encryptedValue, "base64url")),
@@ -1074,20 +1125,20 @@ function decryptSecret(value) {
   ]).toString("utf8");
 }
 function hashToken(value) {
-  return crypto2.createHash("sha256").update(value).digest("hex");
+  return crypto3.createHash("sha256").update(value).digest("hex");
 }
 function createSchedulerToken() {
-  return crypto2.randomBytes(32).toString("base64url");
+  return crypto3.randomBytes(32).toString("base64url");
 }
 function safelyCompareHash(left, right) {
   const leftBuffer = Buffer.from(left, "hex");
   const rightBuffer = Buffer.from(right, "hex");
-  return leftBuffer.length === rightBuffer.length && crypto2.timingSafeEqual(leftBuffer, rightBuffer);
+  return leftBuffer.length === rightBuffer.length && crypto3.timingSafeEqual(leftBuffer, rightBuffer);
 }
 async function hashPassword(value) {
-  const salt = crypto2.randomBytes(16).toString("base64url");
+  const salt = crypto3.randomBytes(16).toString("base64url");
   const derived = await new Promise((resolve, reject) => {
-    crypto2.scrypt(value, salt, 64, (error, key) => error ? reject(error) : resolve(key));
+    crypto3.scrypt(value, salt, 64, (error, key) => error ? reject(error) : resolve(key));
   });
   return `scrypt$${salt}$${derived.toString("base64url")}`;
 }
@@ -1096,9 +1147,9 @@ async function verifyPassword(value, encoded) {
   if (algorithm !== "scrypt" || !salt || !encodedHash) return false;
   const expected = Buffer.from(encodedHash, "base64url");
   const derived = await new Promise((resolve, reject) => {
-    crypto2.scrypt(value, salt, expected.length, (error, key) => error ? reject(error) : resolve(key));
+    crypto3.scrypt(value, salt, expected.length, (error, key) => error ? reject(error) : resolve(key));
   });
-  return expected.length === derived.length && crypto2.timingSafeEqual(expected, derived);
+  return expected.length === derived.length && crypto3.timingSafeEqual(expected, derived);
 }
 
 // server/monitoring/engine.ts
@@ -1418,9 +1469,23 @@ var mailTemplatesInput = z2.object({
   recoveryBody: z2.string().trim().min(1, "\u8BF7\u8F93\u5165\u6062\u590D\u90AE\u4EF6\u6B63\u6587\u3002").max(2e4)
 });
 var accessSettingsInput = z2.object({
-  publicUrl: z2.string().trim().url("\u8BF7\u8F93\u5165\u5B8C\u6574\u8BBF\u95EE\u5730\u5740\uFF0C\u4F8B\u5982 https://monitor.example.com\u3002").max(500).nullable(),
+  publicUrl: z2.string().trim().max(253).nullable().refine((value) => {
+    if (!value) return true;
+    try {
+      normalizeAccessHostname(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, "\u8BF7\u8F93\u5165\u6709\u6548\u57DF\u540D\uFF0C\u4F8B\u5982 monitor.example.com\uFF1B\u65E0\u9700\u586B\u5199 http:// \u6216 https://\u3002").transform((value) => value ? normalizeAccessHostname(value) : null),
   requestedPort: z2.number().int().min(1).max(65535).nullable().refine(isSupportedExternalPort, "\u5916\u90E8\u8BBF\u95EE\u7AEF\u53E3\u4EC5\u652F\u6301 80 \u6216 1024\u201365535\uFF1BHTTPS \u7684 443 \u7AEF\u53E3\u5C06\u5728\u57DF\u540D\u8BC1\u4E66\u914D\u7F6E\u65F6\u542F\u7528\u3002")
 });
+var customTlsInput = z2.object({
+  hostname: z2.string().trim().min(1).max(253),
+  certificate: z2.string().min(64).max(12e4),
+  privateKey: z2.string().min(64).max(12e4),
+  certificateChain: z2.string().max(24e4).nullable().optional()
+}).transform((value) => validateCustomTls(value));
 var localAdminPasswordInput = z2.object({
   password: z2.string().min(12, "\u7BA1\u7406\u5458\u5BC6\u7801\u81F3\u5C11\u9700\u8981 12 \u4E2A\u5B57\u7B26\u3002").max(256),
   confirmation: z2.string()
@@ -1695,10 +1760,12 @@ var appRouter = router({
       };
     }),
     saveMailTemplates: protectedProcedure.input(mailTemplatesInput).mutation(({ input }) => updateSiteSettings(input)),
-    saveAccessSettings: protectedProcedure.input(accessSettingsInput).mutation(async ({ input }) => {
-      var _a;
-      const publicUrl = ((_a = input.publicUrl) == null ? void 0 : _a.replace(/\/$/, "")) || null;
-      return requestAccessSettingsChange({ publicUrl, requestedPort: input.requestedPort });
+    saveAccessSettings: protectedProcedure.input(accessSettingsInput).mutation(async ({ input }) => requestAccessSettingsChange({ publicUrl: input.publicUrl, requestedPort: input.requestedPort })),
+    saveCustomTls: protectedProcedure.input(customTlsInput).mutation(async ({ ctx, input }) => {
+      if (process.env.LOCAL_DEPLOYMENT === "true" && ctx.req.headers["x-forwarded-proto"] !== "https") {
+        throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u8BF7\u5148\u901A\u8FC7 HTTPS \u8BBF\u95EE\u7BA1\u7406\u754C\u9762\uFF0C\u518D\u63D0\u4EA4\u79C1\u94A5\u548C\u8BC1\u4E66\u3002" });
+      }
+      return requestCustomTlsSettings(input);
     }),
     changeLocalPassword: protectedProcedure.input(localAdminPasswordInput).mutation(async ({ input }) => {
       const passwordHash = await hashPassword(input.password);
