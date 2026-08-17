@@ -15,10 +15,8 @@ grep -Fq '"$NODE_DIR/bin/npm" install --omit=dev --legacy-peer-deps --ignore-scr
 grep -Fq '"$NODE_DIR/bin/pnpm" build' "$INSTALLER"
 grep -Fq 'NGINX_BACKUP_DIR="/etc/nginx/sentinel-backups"' "$INSTALLER"
 grep -Fq 'mv /etc/nginx/sites-enabled/default "$NGINX_BACKUP_DIR/default.$(date +%s).conf"' "$INSTALLER"
-grep -Fq 'if systemctl cat cron.service >/dev/null 2>&1; then' "$INSTALLER"
-grep -Fq 'systemctl enable --now cron.service' "$INSTALLER"
-grep -Fq 'elif systemctl cat crond.service >/dev/null 2>&1; then' "$INSTALLER"
-grep -Fq 'systemctl enable --now crond.service' "$INSTALLER"
+grep -Fq 'if systemctl enable --now cron.service >/dev/null 2>&1; then' "$INSTALLER"
+grep -Fq 'elif systemctl enable --now crond.service >/dev/null 2>&1; then' "$INSTALLER"
 grep -Fq 'HOME=/var/lib/site-monitor/home' "$SCRIPT_DIR/deploy-bt-isolated.sh" || true
 grep -Fq 'PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin"' "$INSTALLER"
 

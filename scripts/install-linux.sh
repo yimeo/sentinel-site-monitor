@@ -143,10 +143,10 @@ install -m 700 "$APP_DIR/scripts/apply-access-port.sh" /usr/local/sbin/site-moni
 install -m 644 "$APP_DIR/scripts/site-monitor-access-port.service" "$APP_DIR/scripts/site-monitor-access-port.path" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now site-monitor site-monitor-access-port.path nginx
-if systemctl cat cron.service >/dev/null 2>&1; then
-  systemctl enable --now cron.service
-elif systemctl cat crond.service >/dev/null 2>&1; then
-  systemctl enable --now crond.service
+if systemctl enable --now cron.service >/dev/null 2>&1; then
+  :
+elif systemctl enable --now crond.service >/dev/null 2>&1; then
+  :
 else
   fail "未找到 cron 或 crond systemd 服务。"
 fi
