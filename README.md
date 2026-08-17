@@ -4,7 +4,7 @@ Sentinel 是可自行部署在 Linux 服务器上的网站可用性与内容监�
 
 ## 一条命令安装
 
-在新安装的 Ubuntu 20.04+ 或 CentOS 7+ 服务器上，以具备 `sudo` 权限的账号执行以下命令。安装器会下载公开源码、安装运行依赖、构建应用、配置 systemd、Nginx 反向代理和每分钟 cron 调度；首次打开网页时再设置管理员用户名和密码。
+在新安装的 Ubuntu 20.04+ Debian 11+ 或 CentOS 7+ 服务器上，以具备 `sudo` 权限的账号执行以下命令。安装器会下载公开源码、安装运行依赖、构建应用、配置 systemd、Nginx 反向代理和每分钟 cron 调度；首次打开网页时再设置管理员用户名和密码。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/yimeo/sentinel-site-monitor/main/scripts/remote-install.sh | sudo bash
