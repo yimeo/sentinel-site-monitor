@@ -25,6 +25,7 @@ export const customTlsInput = z.object({
   certificate: z.string().min(64).max(120_000),
   privateKey: z.string().min(64).max(120_000),
   certificateChain: z.string().max(240_000).nullable().optional(),
+  allowInsecureTransport: z.boolean().default(false),
 }).transform(value => validateCustomTls(value));
 
 export const localAdminPasswordInput = z.object({

@@ -1484,7 +1484,8 @@ var customTlsInput = z2.object({
   hostname: z2.string().trim().min(1).max(253),
   certificate: z2.string().min(64).max(12e4),
   privateKey: z2.string().min(64).max(12e4),
-  certificateChain: z2.string().max(24e4).nullable().optional()
+  certificateChain: z2.string().max(24e4).nullable().optional(),
+  allowInsecureTransport: z2.boolean().default(false)
 }).transform((value) => validateCustomTls(value));
 var localAdminPasswordInput = z2.object({
   password: z2.string().min(12, "\u7BA1\u7406\u5458\u5BC6\u7801\u81F3\u5C11\u9700\u8981 12 \u4E2A\u5B57\u7B26\u3002").max(256),
@@ -1762,8 +1763,8 @@ var appRouter = router({
     saveMailTemplates: protectedProcedure.input(mailTemplatesInput).mutation(({ input }) => updateSiteSettings(input)),
     saveAccessSettings: protectedProcedure.input(accessSettingsInput).mutation(async ({ input }) => requestAccessSettingsChange({ publicUrl: input.publicUrl, requestedPort: input.requestedPort })),
     saveCustomTls: protectedProcedure.input(customTlsInput).mutation(async ({ ctx, input }) => {
-      if (process.env.LOCAL_DEPLOYMENT === "true" && ctx.req.headers["x-forwarded-proto"] !== "https") {
-        throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u8BF7\u5148\u901A\u8FC7 HTTPS \u8BBF\u95EE\u7BA1\u7406\u754C\u9762\uFF0C\u518D\u63D0\u4EA4\u79C1\u94A5\u548C\u8BC1\u4E66\u3002" });
+      if (process.env.LOCAL_DEPLOYMENT === "true" && ctx.req.headers["x-forwarded-proto"] !== "https" && !input.allowInsecureTransport) {
+        throw new TRPCError3({ code: "PRECONDITION_FAILED", message: "\u5F53\u524D\u901A\u8FC7 HTTP \u8BBF\u95EE\u3002\u8BF7\u5728\u9875\u9762\u52FE\u9009\u98CE\u9669\u786E\u8BA4\u540E\u518D\u63D0\u4EA4\u8BC1\u4E66\u548C\u79C1\u94A5\uFF0C\u6216\u5148\u4F7F\u7528 HTTPS\u3002" });
       }
       return requestCustomTlsSettings(input);
     }),

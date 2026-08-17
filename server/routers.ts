@@ -260,8 +260,8 @@ export const appRouter = router({
     saveMailTemplates: protectedProcedure.input(mailTemplatesInput).mutation(({ input }) => db.updateSiteSettings(input)),
     saveAccessSettings: protectedProcedure.input(accessSettingsInput).mutation(async ({ input }) => db.requestAccessSettingsChange({ publicUrl: input.publicUrl, requestedPort: input.requestedPort })),
     saveCustomTls: protectedProcedure.input(customTlsInput).mutation(async ({ ctx, input }) => {
-      if (process.env.LOCAL_DEPLOYMENT === "true" && ctx.req.headers["x-forwarded-proto"] !== "https") {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请先通过 HTTPS 访问管理界面，再提交私钥和证书。" });
+      if (process.env.LOCAL_DEPLOYMENT === "true" && ctx.req.headers["x-forwarded-proto"] !== "https" && !input.allowInsecureTransport) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前通过 HTTP 访问。请在页面勾选风险确认后再提交证书和私钥，或先使用 HTTPS。" });
       }
       return db.requestCustomTlsSettings(input);
     }),
