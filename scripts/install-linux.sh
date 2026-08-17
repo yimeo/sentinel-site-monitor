@@ -59,8 +59,8 @@ chown -R "$APP_USER:$APP_USER" "$APP_DIR" /var/lib/site-monitor
 
 echo "[4/8] 安装依赖并构建…"
 cd "$APP_DIR"
-runuser -u "$APP_USER" -- pnpm install --frozen-lockfile
-runuser -u "$APP_USER" -- pnpm build
+runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/pnpm" install --frozen-lockfile
+runuser -u "$APP_USER" -- env HOME=/var/lib/site-monitor PATH="$NODE_DIR/bin:/usr/local/bin:/usr/bin:/bin" "$NODE_DIR/bin/pnpm" build
 
 echo "[5/8] 创建运行环境与应用服务…"
 JWT_SECRET="$(openssl rand -hex 32)"
@@ -128,8 +128,8 @@ systemctl daemon-reload
 systemctl enable --now site-monitor site-monitor-access-port.path nginx
 if systemctl list-unit-files | grep -q '^cron\.service'; then systemctl enable --now cron; else systemctl enable --now crond; fi
 cat >/etc/cron.d/site-monitor <<EOF
-# Sentinel：每分钟检查到期任务；本机令牌仅保存在 root 可读文件中。
-* * * * * root ${CURL_BIN} -fsS --max-time 50 -X POST -H 'Authorization: Bearer ${LOCAL_SCHEDULER_TOKEN}' http://127.0.0.1:${APP_PORT}/api/scheduled/monitor-run >> /var/log/site-monitor-cron.log 2>&1
+# Sentinel：每分钟启动一次，在每 10 秒扫描到期任务；本机令牌仅保存在 root 可读文件中。
+* * * * * root for delay in 0 10 20 30 40 50; do ( sleep \$delay; ${CURL_BIN} -fsS --max-time 8 -X POST -H 'Authorization: Bearer ${LOCAL_SCHEDULER_TOKEN}' http://127.0.0.1:${APP_PORT}/api/scheduled/monitor-run >> /var/log/site-monitor-cron.log 2>&1 ) & done; wait
 EOF
 chmod 600 /etc/cron.d/site-monitor
 if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
@@ -150,4 +150,4 @@ IP="$(hostname -I | awk '{print $1}')"
 echo
 echo "安装完成。访问地址：http://${IP}:${PUBLIC_PORT}/"
 echo "首次访问将显示管理员初始化页，请设置管理员用户名和至少 12 位密码。"
-echo "已自动配置每分钟 cron 调度，无需在界面额外生成或粘贴调度令牌。"
+echo "已自动配置每分钟启动、每 10 秒扫描的 cron 调度，无需在界面额外生成或粘贴调度令牌。"
