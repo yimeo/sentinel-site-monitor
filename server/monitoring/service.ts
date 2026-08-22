@@ -9,6 +9,8 @@ export type RunResult = {
   notification: "alert" | "recovery" | "none" | "delivery_failed";
 };
 
+let dueMonitorRunInFlight: Promise<RunResult[]> | null = null;
+
 export function formatOutageDuration(durationMs: number): string {
   const seconds = Math.max(0, Math.floor(durationMs / 1_000));
   const days = Math.floor(seconds / 86_400);
@@ -42,23 +44,28 @@ export async function runMonitorTask(task: MonitorTask): Promise<RunResult> {
   const nextStatus = statusFromCheck(result);
   const isHealthy = result.status === "success";
   const now = new Date();
+  const recoverySuccessStreak = isHealthy && task.alertOpen ? 1 : 0;
   const shouldInitialAlert = !isHealthy && (!task.alertOpen || !task.lastAlertAt);
   const shouldRepeatAlert = !isHealthy && task.alertOpen && task.alertMode === "repeat" && task.lastAlertAt !== null
     && now.getTime() - task.lastAlertAt.getTime() >= task.repeatAlertMinutes * 60_000;
   const shouldAlert = shouldInitialAlert || shouldRepeatAlert;
-  const shouldRecover = isHealthy && task.alertOpen;
+  const shouldRecover = isHealthy && task.alertOpen && recoverySuccessStreak >= 1;
+  const nextCheckAt = shouldRecover || !task.alertOpen && isHealthy
+    ? new Date(Math.max(now.getTime(), task.nextCheckAt?.getTime() ?? now.getTime()) + task.intervalMinutes * 60_000)
+    : new Date(now.getTime() + 2 * 60_000);
 
   await db.recordMonitorCheck(task.id, result, {
     status: nextStatus,
     lastCheckedAt: now,
-    nextCheckAt: new Date(now.getTime() + task.intervalMinutes * 60_000),
+    nextCheckAt,
     lastResponseTimeMs: result.responseTimeMs,
     lastHttpStatus: result.httpStatus,
     lastError: result.errorMessage,
-    alertOpen: !isHealthy,
+    alertOpen: shouldRecover ? false : (!isHealthy || task.alertOpen),
     lastAlertAt: shouldRecover ? null : task.lastAlertAt,
     lastFailureAt: isHealthy ? task.lastFailureAt : (task.alertOpen ? task.lastFailureAt ?? now : now),
     lastRecoveredAt: shouldRecover ? now : task.lastRecoveredAt,
+    recoverySuccessStreak,
   });
 
   if (!shouldAlert && !shouldRecover) {
@@ -93,10 +100,19 @@ export async function runMonitorTasks(tasks: MonitorTask[], concurrency = 3): Pr
 }
 
 export async function runDueMonitorTasks(): Promise<RunResult[]> {
-  const dueTasks = await db.listDueMonitorTasks();
-  const results: RunResult[] = [];
-  for (const task of dueTasks) {
-    results.push(await runMonitorTask(task));
+  if (dueMonitorRunInFlight) return [];
+  const run = (async () => {
+    const dueTasks = await db.listDueMonitorTasks();
+    const results: RunResult[] = [];
+    for (const task of dueTasks) {
+      results.push(await runMonitorTask(task));
+    }
+    return results;
+  })();
+  dueMonitorRunInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (dueMonitorRunInFlight === run) dueMonitorRunInFlight = null;
   }
-  return results;
 }

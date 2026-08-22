@@ -72,7 +72,7 @@ async function getSqlite(): Promise<Database> {
           alertMode TEXT NOT NULL DEFAULT 'once', repeatAlertMinutes INTEGER NOT NULL DEFAULT 30, enabled INTEGER NOT NULL DEFAULT 1,
           status TEXT NOT NULL DEFAULT 'unknown', lastCheckedAt TEXT, nextCheckAt TEXT, lastResponseTimeMs INTEGER, lastHttpStatus INTEGER,
           lastError TEXT, alertOpen INTEGER NOT NULL DEFAULT 0, lastAlertAt TEXT, lastFailureAt TEXT, lastRecoveredAt TEXT,
-          createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+          recoverySuccessStreak INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS monitor_tasks_owner_idx ON monitor_tasks(ownerId);
         CREATE INDEX IF NOT EXISTS monitor_tasks_due_idx ON monitor_tasks(enabled, lastCheckedAt);
@@ -109,6 +109,10 @@ async function getSqlite(): Promise<Database> {
       const monitorCheckColumns = selectRows<Row>(db, "PRAGMA table_info(monitor_checks)");
       if (!monitorCheckColumns.some(column => String(column.name) === "resolvedAddresses")) {
         db.exec("ALTER TABLE monitor_checks ADD COLUMN resolvedAddresses TEXT");
+      }
+      const recoveryColumns = selectRows<Row>(db, "PRAGMA table_info(monitor_tasks)");
+      if (!recoveryColumns.some(column => String(column.name) === "recoverySuccessStreak")) {
+        db.exec("ALTER TABLE monitor_tasks ADD COLUMN recoverySuccessStreak INTEGER NOT NULL DEFAULT 0");
       }
       if (!bytes) await persist(db);
       return db;
@@ -165,7 +169,7 @@ function mapTask(row: Row): MonitorTask {
     id: Number(row.id), ownerId: Number(row.ownerId), name: String(row.name), url: String(row.url), expectedContent: row.expectedContent ? String(row.expectedContent) : null,
     forbiddenContent: row.forbiddenContent ? String(row.forbiddenContent) : null, intervalMinutes: Number(row.intervalMinutes), alertMode: row.alertMode === "repeat" ? "repeat" : "once", repeatAlertMinutes: Number(row.repeatAlertMinutes), enabled: parseBoolean(row.enabled),
     status: (["up", "down", "content_mismatch"].includes(String(row.status)) ? row.status : "unknown") as MonitorTask["status"], lastCheckedAt: parseDate(row.lastCheckedAt), nextCheckAt: parseDate(row.nextCheckAt), lastResponseTimeMs: row.lastResponseTimeMs === null ? null : Number(row.lastResponseTimeMs), lastHttpStatus: row.lastHttpStatus === null ? null : Number(row.lastHttpStatus), lastError: row.lastError ? String(row.lastError) : null,
-    alertOpen: parseBoolean(row.alertOpen), lastAlertAt: parseDate(row.lastAlertAt), lastFailureAt: parseDate(row.lastFailureAt), lastRecoveredAt: parseDate(row.lastRecoveredAt), createdAt: parseDate(row.createdAt)!, updatedAt: parseDate(row.updatedAt)!,
+    alertOpen: parseBoolean(row.alertOpen), lastAlertAt: parseDate(row.lastAlertAt), lastFailureAt: parseDate(row.lastFailureAt), lastRecoveredAt: parseDate(row.lastRecoveredAt), recoverySuccessStreak: Number(row.recoverySuccessStreak ?? 0), createdAt: parseDate(row.createdAt)!, updatedAt: parseDate(row.updatedAt)!,
   };
 }
 
@@ -360,7 +364,7 @@ export async function importMonitorTasks(ownerId: number, tasks: MonitorTaskTran
 
 export async function updateMonitorTask(ownerId: number, id: number, values: Partial<typeof import("../drizzle/schema").monitorTasks.$inferInsert>) {
   return write(db => {
-    const allowed = ["name", "url", "expectedContent", "forbiddenContent", "intervalMinutes", "alertMode", "repeatAlertMinutes", "enabled", "status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt"] as const;
+    const allowed = ["name", "url", "expectedContent", "forbiddenContent", "intervalMinutes", "alertMode", "repeatAlertMinutes", "enabled", "status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt", "recoverySuccessStreak"] as const;
     const updates = allowed.filter(key => values[key] !== undefined);
     if (updates.length > 0) {
       const assignments = [...updates.map(key => `${key} = ?`), "updatedAt = ?"];
@@ -442,7 +446,7 @@ export async function recordMonitorCheck(taskId: number, result: { status: "succ
   await write(db => {
     const resolvedAddresses = JSON.stringify(Array.from(new Set(result.resolvedAddresses)).slice(0, 32));
     db.run("INSERT INTO monitor_checks (taskId,status,checkedAt,responseTimeMs,httpStatus,errorMessage,expectedContentMatched,resolvedAddresses) VALUES (?,?,?,?,?,?,?,?)", [taskId, result.status, now(), result.responseTimeMs, toSqlValue(result.httpStatus), toSqlValue(result.errorMessage), toSqlValue(result.expectedContentMatched), resolvedAddresses]);
-    const allowed = ["status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt"] as const;
+    const allowed = ["status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt", "recoverySuccessStreak"] as const;
     const updates = allowed.filter(key => nextTaskValues[key] !== undefined);
     if (updates.length) db.run(`UPDATE monitor_tasks SET ${[...updates.map(key => `${key} = ?`), "updatedAt = ?"].join(", ")} WHERE id = ?`, [...updates.map(key => toSqlValue(nextTaskValues[key])), now(), taskId]);
   });

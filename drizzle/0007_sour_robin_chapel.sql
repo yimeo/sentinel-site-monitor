@@ -1,0 +1,1 @@
+ALTER TABLE `monitor_tasks` ADD `recoverySuccessStreak` int DEFAULT 0 NOT NULL;

@@ -13,7 +13,7 @@ vi.mock("./mail", () => ({ sendMonitorAlert: vi.fn() }));
 import * as db from "../db";
 import { checkUrl, statusFromCheck } from "./engine";
 import { sendMonitorAlert } from "./mail";
-import { formatOutageDuration, runMonitorTask, runMonitorTasks } from "./service";
+import { formatOutageDuration, runDueMonitorTasks, runMonitorTask, runMonitorTasks } from "./service";
 
 const task = {
   id: 7,
@@ -34,6 +34,7 @@ const task = {
   lastAlertAt: null,
   lastFailureAt: null,
   lastRecoveredAt: null,
+  recoverySuccessStreak: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
 } as const;
@@ -58,6 +59,9 @@ describe("monitor alert state transitions", () => {
     await expect(runMonitorTask(task as never)).resolves.toMatchObject({ status: "down", notification: "alert" });
     expect(db.recordMonitorCheck).toHaveBeenCalledWith(7, expect.objectContaining({ status: "network_error", resolvedAddresses: ["203.0.113.10"] }), expect.objectContaining({ alertOpen: true }));
     expect(sendMonitorAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: "alert", taskName: "官网首页" }));
+    const values = vi.mocked(db.recordMonitorCheck).mock.calls[0]?.[2] as { nextCheckAt: Date };
+    expect(values.nextCheckAt.getTime()).toBeGreaterThan(Date.now() + 100_000);
+    expect(values.nextCheckAt.getTime()).toBeLessThan(Date.now() + 130_000);
   });
 
   it("连续异常时保持静默，避免邮件轰炸", async () => {
@@ -65,6 +69,17 @@ describe("monitor alert state transitions", () => {
     vi.mocked(statusFromCheck).mockReturnValue("down");
     await expect(runMonitorTask({ ...task, alertOpen: true, lastAlertAt: new Date() } as never)).resolves.toMatchObject({ notification: "none" });
     expect(sendMonitorAlert).not.toHaveBeenCalled();
+  });
+
+  it("故障期间每 2 分钟复查，单次成功即恢复并发送通知", async () => {
+    vi.mocked(checkUrl).mockResolvedValue({ status: "success", responseTimeMs: 32, httpStatus: 200, errorMessage: null, expectedContentMatched: null });
+    vi.mocked(statusFromCheck).mockReturnValue("up");
+    const failureStartedAt = new Date(Date.now() - 65_000);
+    await expect(runMonitorTask({ ...task, alertOpen: true, lastFailureAt: failureStartedAt } as never)).resolves.toMatchObject({ status: "up", notification: "recovery" });
+    const values = vi.mocked(db.recordMonitorCheck).mock.calls[0]?.[2] as { nextCheckAt: Date; recoverySuccessStreak: number };
+    expect(values.recoverySuccessStreak).toBe(1);
+    expect(values.nextCheckAt.getTime()).toBeGreaterThan(Date.now() + 4 * 60_000);
+    expect(sendMonitorAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: "recovery" }));
   });
 
   it("从异常恢复时发送恢复通知", async () => {
@@ -106,5 +121,21 @@ describe("monitor alert state transitions", () => {
     expect(results).toHaveLength(2);
     expect(results.map(result => result.taskId)).toEqual([7, 8]);
     expect(checkUrl).toHaveBeenCalledTimes(2);
+  });
+
+  it("高频调度请求重叠时只执行一轮到期检查", async () => {
+    let resolveCheck: ((value: Awaited<ReturnType<typeof checkUrl>>) => void) | undefined;
+    vi.mocked(db.listDueMonitorTasks).mockResolvedValue([task] as never);
+    vi.mocked(checkUrl).mockImplementation(() => new Promise(resolve => { resolveCheck = resolve; }) as never);
+    vi.mocked(statusFromCheck).mockReturnValue("up");
+
+    const first = runDueMonitorTasks();
+    const second = runDueMonitorTasks();
+    expect(db.listDueMonitorTasks).toHaveBeenCalledOnce();
+    await expect(second).resolves.toEqual([]);
+
+    resolveCheck?.({ status: "success", responseTimeMs: 21, httpStatus: 200, errorMessage: null, expectedContentMatched: null, resolvedAddresses: [] });
+    await expect(first).resolves.toHaveLength(1);
+    expect(checkUrl).toHaveBeenCalledOnce();
   });
 });
