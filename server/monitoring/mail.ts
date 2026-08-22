@@ -73,6 +73,13 @@ export async function sendTestEmail(config: MailConfig): Promise<void> {
   });
 }
 
+export function buildMonitorAlertSubject(template: string, type: "alert" | "recovery", alertCount = 1): string {
+  if (type === "recovery" || alertCount <= 1) return template;
+  if (template.includes("{{alertCount}}")) return template;
+  if (/故障告警\s*[：:]/.test(template)) return template.replace(/故障告警\s*(?=[：:])/, `故障告警${alertCount}`);
+  if (/故障\s*[：:]/.test(template)) return template.replace(/故障\s*(?=[：:])/, `故障告警${alertCount}`);
+  return `故障告警${alertCount}：${template}`;
+}
 export function buildMonitorAlertBody(template: string, type: "alert" | "recovery", alertCount = 1): string {
   if (type === "recovery" || alertCount <= 1) return template;
   return `${template}\n\n【持续故障提醒】\n当前告警次数：第 {{alertCount}} 次\n首次故障时间：{{firstFailureAt}}\n故障持续时长：{{outageDuration}}`;
@@ -90,7 +97,8 @@ export async function sendMonitorAlert(
     responseTimeMs: input.responseTimeMs !== null ? `${input.responseTimeMs} ms` : "—", errorMessage: input.errorMessage ?? "—",
     checkedAt: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }), outageDuration: input.outageDuration ?? "—", alertCount: input.alertCount?.toString() ?? "1", firstFailureAt: input.firstFailureAt ?? "—",
   };
-  const subject = renderMailTemplate(isRecovery ? input.templates.recoverySubject : input.templates.alertSubject, values);
+  const subjectTemplate = buildMonitorAlertSubject(isRecovery ? input.templates.recoverySubject : input.templates.alertSubject, input.type, input.alertCount ?? 1);
+  const subject = renderMailTemplate(subjectTemplate, values);
   const bodyTemplate = isRecovery && !input.templates.recoveryBody.includes("{{outageDuration}}")
     ? `${input.templates.recoveryBody}\n\n故障持续时长：{{outageDuration}}`
     : buildMonitorAlertBody(isRecovery ? input.templates.recoveryBody : input.templates.alertBody, input.type, input.alertCount ?? 1);
