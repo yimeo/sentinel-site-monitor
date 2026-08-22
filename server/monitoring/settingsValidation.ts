@@ -5,6 +5,7 @@ import { normalizeAccessHostname, validateCustomTls } from "./tls";
 
 export const mailTemplatesInput = z.object({
   alertSubject: z.string().trim().min(1, "请输入故障邮件主题。").max(300),
+  repeatAlertSubject: z.string().trim().min(1, "请输入重复故障邮件主题。").max(300),
   alertBody: z.string().trim().min(1, "请输入故障邮件正文。").max(20_000),
   recoverySubject: z.string().trim().min(1, "请输入恢复邮件主题。").max(300),
   recoveryBody: z.string().trim().min(1, "请输入恢复邮件正文。").max(20_000),

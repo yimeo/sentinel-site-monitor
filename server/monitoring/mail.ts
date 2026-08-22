@@ -99,7 +99,7 @@ export async function sendMonitorAlert(
     responseTimeMs: input.responseTimeMs !== null ? `${input.responseTimeMs} ms` : "—", errorMessage: input.errorMessage ?? "—",
     checkedAt: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }), outageDuration: input.outageDuration ?? "—", alertCount: input.alertCount?.toString() ?? "1", firstFailureAt: input.firstFailureAt ?? "—",
   };
-  const subjectTemplate = buildMonitorAlertSubject(isRecovery ? input.templates.recoverySubject : input.templates.alertSubject, input.type, input.alertCount ?? 1);
+  const subjectTemplate = isRecovery ? input.templates.recoverySubject : (input.alertCount ?? 1) > 1 ? input.templates.repeatAlertSubject : input.templates.alertSubject;
   const subject = renderMailTemplate(subjectTemplate, values);
   const bodyTemplate = isRecovery && !input.templates.recoveryBody.includes("{{outageDuration}}")
     ? `${input.templates.recoveryBody}\n\n故障持续时长：{{outageDuration}}`

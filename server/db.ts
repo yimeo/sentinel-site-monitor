@@ -11,6 +11,7 @@ import { formatTlsSettingsRequest, type TlsSettingsInput } from "./monitoring/tl
 
 export type MailTemplates = {
   alertSubject: string;
+  repeatAlertSubject: string;
   alertBody: string;
   recoverySubject: string;
   recoveryBody: string;
@@ -18,6 +19,7 @@ export type MailTemplates = {
 
 export const defaultMailTemplates: MailTemplates = {
   alertSubject: "[Sentinel] 故障告警：{{taskName}}",
+  repeatAlertSubject: "[Sentinel] 故障告警{{alertCount}}（N）：{{taskName}} 故障持续时长：{{outageDuration}}",
   alertBody: "监控目标需要关注。\n\n任务：{{taskName}}\nURL：{{url}}\n状态：{{status}}\nHTTP 状态码：{{httpStatus}}\n响应时长：{{responseTimeMs}}\n错误详情：{{errorMessage}}\n检测时间：{{checkedAt}}",
   recoverySubject: "[Sentinel] 恢复通知：{{taskName}}",
   recoveryBody: "监控目标已恢复正常。\n\n任务：{{taskName}}\nURL：{{url}}\n状态：{{status}}\nHTTP 状态码：{{httpStatus}}\n响应时长：{{responseTimeMs}}\n故障持续时长：{{outageDuration}}\n检测时间：{{checkedAt}}",
@@ -72,7 +74,7 @@ async function getSqlite(): Promise<Database> {
           alertMode TEXT NOT NULL DEFAULT 'once', repeatAlertMinutes INTEGER NOT NULL DEFAULT 30, enabled INTEGER NOT NULL DEFAULT 1,
           status TEXT NOT NULL DEFAULT 'unknown', lastCheckedAt TEXT, nextCheckAt TEXT, lastResponseTimeMs INTEGER, lastHttpStatus INTEGER,
           lastError TEXT, alertOpen INTEGER NOT NULL DEFAULT 0, lastAlertAt TEXT, lastFailureAt TEXT, lastRecoveredAt TEXT,
-          recoverySuccessStreak INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
+          recoverySuccessStreak INTEGER NOT NULL DEFAULT 0, alertCount INTEGER NOT NULL DEFAULT 0, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS monitor_tasks_owner_idx ON monitor_tasks(ownerId);
         CREATE INDEX IF NOT EXISTS monitor_tasks_due_idx ON monitor_tasks(enabled, lastCheckedAt);
@@ -93,12 +95,15 @@ async function getSqlite(): Promise<Database> {
         );
         CREATE INDEX IF NOT EXISTS local_sessions_expiry_idx ON local_sessions(expiresAt);
         CREATE TABLE IF NOT EXISTS site_settings (
-          id INTEGER PRIMARY KEY CHECK (id = 1), alertSubject TEXT NOT NULL, alertBody TEXT NOT NULL,
+          id INTEGER PRIMARY KEY CHECK (id = 1), alertSubject TEXT NOT NULL, repeatAlertSubject TEXT NOT NULL DEFAULT '[Sentinel] 故障告警{{alertCount}}（N）：{{taskName}} 故障持续时长：{{outageDuration}}', alertBody TEXT NOT NULL,
           recoverySubject TEXT NOT NULL, recoveryBody TEXT NOT NULL, publicUrl TEXT, requestedPort INTEGER,
           adminUsername TEXT NOT NULL DEFAULT 'sentinel-admin', adminPasswordHash TEXT, passwordChangeRequestedAt TEXT, updatedAt TEXT NOT NULL
         );
       `);
       const siteSettingsColumns = selectRows<Row>(db, "PRAGMA table_info(site_settings)");
+      if (!siteSettingsColumns.some(column => String(column.name) === "repeatAlertSubject")) {
+        db.exec("ALTER TABLE site_settings ADD COLUMN repeatAlertSubject TEXT NOT NULL DEFAULT '[Sentinel] 故障告警{{alertCount}}（N）：{{taskName}} 故障持续时长：{{outageDuration}}'");
+      }
       if (!siteSettingsColumns.some(column => String(column.name) === "adminUsername")) {
         db.exec("ALTER TABLE site_settings ADD COLUMN adminUsername TEXT NOT NULL DEFAULT 'sentinel-admin'");
       }
@@ -113,6 +118,10 @@ async function getSqlite(): Promise<Database> {
       const recoveryColumns = selectRows<Row>(db, "PRAGMA table_info(monitor_tasks)");
       if (!recoveryColumns.some(column => String(column.name) === "recoverySuccessStreak")) {
         db.exec("ALTER TABLE monitor_tasks ADD COLUMN recoverySuccessStreak INTEGER NOT NULL DEFAULT 0");
+      }
+      const alertCountColumns = selectRows<Row>(db, "PRAGMA table_info(monitor_tasks)");
+      if (!alertCountColumns.some(column => String(column.name) === "alertCount")) {
+        db.exec("ALTER TABLE monitor_tasks ADD COLUMN alertCount INTEGER NOT NULL DEFAULT 0");
       }
       if (!bytes) await persist(db);
       return db;
@@ -183,7 +192,7 @@ function mapSmtp(row: Row): SmtpSettings {
 
 function mapSiteSettings(row: Row): SiteSettings {
   return {
-    alertSubject: String(row.alertSubject), alertBody: String(row.alertBody), recoverySubject: String(row.recoverySubject), recoveryBody: String(row.recoveryBody),
+    alertSubject: String(row.alertSubject), repeatAlertSubject: String(row.repeatAlertSubject || defaultMailTemplates.repeatAlertSubject), alertBody: String(row.alertBody), recoverySubject: String(row.recoverySubject), recoveryBody: String(row.recoveryBody),
     publicUrl: row.publicUrl ? String(row.publicUrl) : null, requestedPort: row.requestedPort === null ? null : Number(row.requestedPort), adminUsername: row.adminUsername ? String(row.adminUsername) : "sentinel-admin",
     adminPasswordHash: row.adminPasswordHash ? String(row.adminPasswordHash) : null, passwordChangeRequestedAt: parseDate(row.passwordChangeRequestedAt), updatedAt: parseDate(row.updatedAt)!,
   };
@@ -364,7 +373,7 @@ export async function importMonitorTasks(ownerId: number, tasks: MonitorTaskTran
 
 export async function updateMonitorTask(ownerId: number, id: number, values: Partial<typeof import("../drizzle/schema").monitorTasks.$inferInsert>) {
   return write(db => {
-    const allowed = ["name", "url", "expectedContent", "forbiddenContent", "intervalMinutes", "alertMode", "repeatAlertMinutes", "enabled", "status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt", "recoverySuccessStreak"] as const;
+    const allowed = ["name", "url", "expectedContent", "forbiddenContent", "intervalMinutes", "alertMode", "repeatAlertMinutes", "enabled", "status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt", "recoverySuccessStreak", "alertCount"] as const;
     const updates = allowed.filter(key => values[key] !== undefined);
     if (updates.length > 0) {
       const assignments = [...updates.map(key => `${key} = ?`), "updatedAt = ?"];
@@ -446,7 +455,7 @@ export async function recordMonitorCheck(taskId: number, result: { status: "succ
   await write(db => {
     const resolvedAddresses = JSON.stringify(Array.from(new Set(result.resolvedAddresses)).slice(0, 32));
     db.run("INSERT INTO monitor_checks (taskId,status,checkedAt,responseTimeMs,httpStatus,errorMessage,expectedContentMatched,resolvedAddresses) VALUES (?,?,?,?,?,?,?,?)", [taskId, result.status, now(), result.responseTimeMs, toSqlValue(result.httpStatus), toSqlValue(result.errorMessage), toSqlValue(result.expectedContentMatched), resolvedAddresses]);
-    const allowed = ["status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt", "recoverySuccessStreak"] as const;
+    const allowed = ["status", "lastCheckedAt", "nextCheckAt", "lastResponseTimeMs", "lastHttpStatus", "lastError", "alertOpen", "lastAlertAt", "lastFailureAt", "lastRecoveredAt", "recoverySuccessStreak", "alertCount"] as const;
     const updates = allowed.filter(key => nextTaskValues[key] !== undefined);
     if (updates.length) db.run(`UPDATE monitor_tasks SET ${[...updates.map(key => `${key} = ?`), "updatedAt = ?"].join(", ")} WHERE id = ?`, [...updates.map(key => toSqlValue(nextTaskValues[key])), now(), taskId]);
   });
@@ -490,12 +499,12 @@ export async function getSiteSettings(): Promise<SiteSettings> {
       return settings;
     }
     const timestamp = now();
-    db.run("INSERT INTO site_settings (id,alertSubject,alertBody,recoverySubject,recoveryBody,updatedAt) VALUES (1,?,?,?,?,?)", [defaultMailTemplates.alertSubject, defaultMailTemplates.alertBody, defaultMailTemplates.recoverySubject, defaultMailTemplates.recoveryBody, timestamp]);
+    db.run("INSERT INTO site_settings (id,alertSubject,repeatAlertSubject,alertBody,recoverySubject,recoveryBody,updatedAt) VALUES (1,?,?,?,?,?,?)", [defaultMailTemplates.alertSubject, defaultMailTemplates.repeatAlertSubject, defaultMailTemplates.alertBody, defaultMailTemplates.recoverySubject, defaultMailTemplates.recoveryBody, timestamp]);
     return { ...defaultMailTemplates, publicUrl: null, requestedPort: null, adminUsername: "sentinel-admin", adminPasswordHash: null, passwordChangeRequestedAt: null, updatedAt: new Date(timestamp) };
   });
 }
 
-export async function updateSiteSettings(values: Partial<Pick<SiteSettings, "alertSubject" | "alertBody" | "recoverySubject" | "recoveryBody" | "publicUrl" | "requestedPort" | "adminUsername" | "adminPasswordHash" | "passwordChangeRequestedAt">>) {
+export async function updateSiteSettings(values: Partial<Pick<SiteSettings, "alertSubject" | "repeatAlertSubject" | "alertBody" | "recoverySubject" | "recoveryBody" | "publicUrl" | "requestedPort" | "adminUsername" | "adminPasswordHash" | "passwordChangeRequestedAt">>) {
   await getSiteSettings();
   await write(db => {
     const updates = Object.entries(values).filter(([, value]) => value !== undefined) as [string, unknown][];

@@ -3,6 +3,7 @@ import { accessSettingsInput, localAdminPasswordInput, localAdminUsernameInput, 
 
 const validTemplates = {
   alertSubject: "故障 {{taskName}}",
+  repeatAlertSubject: "故障告警{{alertCount}}（N）：{{taskName}} 故障持续时长：{{outageDuration}}",
   alertBody: "目标 {{url}} 不可用",
   recoverySubject: "恢复 {{taskName}}",
   recoveryBody: "目标 {{url}} 已恢复",

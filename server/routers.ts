@@ -246,6 +246,7 @@ export const appRouter = router({
       const settings = await db.getSiteSettings();
       return {
         alertSubject: settings.alertSubject,
+        repeatAlertSubject: settings.repeatAlertSubject,
         alertBody: settings.alertBody,
         recoverySubject: settings.recoverySubject,
         recoveryBody: settings.recoveryBody,
