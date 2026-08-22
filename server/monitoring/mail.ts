@@ -75,10 +75,12 @@ export async function sendTestEmail(config: MailConfig): Promise<void> {
 
 export function buildMonitorAlertSubject(template: string, type: "alert" | "recovery", alertCount = 1): string {
   if (type === "recovery" || alertCount <= 1) return template;
-  if (template.includes("{{alertCount}}")) return template;
-  if (/故障告警\s*[：:]/.test(template)) return template.replace(/故障告警\s*(?=[：:])/, `故障告警${alertCount}`);
-  if (/故障\s*[：:]/.test(template)) return template.replace(/故障\s*(?=[：:])/, `故障告警${alertCount}`);
-  return `故障告警${alertCount}：${template}`;
+  let subject = template;
+  if (template.includes("{{alertCount}}")) subject = template;
+  else if (/故障告警\s*[：:]/.test(template)) subject = template.replace(/故障告警\s*(?=[：:])/, `故障告警${alertCount}`);
+  else if (/故障\s*[：:]/.test(template)) subject = template.replace(/故障\s*(?=[：:])/, `故障告警${alertCount}`);
+  else subject = `故障告警${alertCount}：${template}`;
+  return subject.includes("{{outageDuration}}") ? subject : `${subject} 故障持续时长：{{outageDuration}}`;
 }
 export function buildMonitorAlertBody(template: string, type: "alert" | "recovery", alertCount = 1): string {
   if (type === "recovery" || alertCount <= 1) return template;

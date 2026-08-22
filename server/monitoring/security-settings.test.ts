@@ -16,9 +16,9 @@ describe("local administrator password", () => {
 describe("mail template variables", () => {
   it("重复告警主题显示次数，首次告警主题保持不变", () => {
     expect(buildMonitorAlertSubject("[Sentinel] 故障告警：{{taskName}}", "alert", 1)).toBe("[Sentinel] 故障告警：{{taskName}}");
-    expect(buildMonitorAlertSubject("[Sentinel] 故障告警：{{taskName}}", "alert", 2)).toBe("[Sentinel] 故障告警2：{{taskName}}");
-    expect(buildMonitorAlertSubject("故障告警：{{taskName}}", "alert", 3)).toBe("故障告警3：{{taskName}}");
-    expect(buildMonitorAlertSubject("告警 {{alertCount}}：{{taskName}}", "alert", 4)).toBe("告警 {{alertCount}}：{{taskName}}");
+    expect(buildMonitorAlertSubject("[Sentinel] 故障告警：{{taskName}}", "alert", 2)).toBe("[Sentinel] 故障告警2：{{taskName}} 故障持续时长：{{outageDuration}}");
+    expect(buildMonitorAlertSubject("故障告警：{{taskName}}", "alert", 3)).toBe("故障告警3：{{taskName}} 故障持续时长：{{outageDuration}}");
+    expect(buildMonitorAlertSubject("告警 {{alertCount}}：{{taskName}}", "alert", 4)).toBe("告警 {{alertCount}}：{{taskName}} 故障持续时长：{{outageDuration}}");
   });
 
   it("首次故障保持普通正文，重复告警才追加次数和时长摘要", () => {
