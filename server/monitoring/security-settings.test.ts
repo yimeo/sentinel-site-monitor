@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "./crypto";
-import { buildSmtpTransportOptions, renderMailTemplate, renderMonitorEmailHtml } from "./mail";
+import { buildMonitorAlertBody, buildSmtpTransportOptions, renderMailTemplate, renderMonitorEmailHtml } from "./mail";
 import { defaultMailTemplates } from "../db";
 
 describe("local administrator password", () => {
@@ -14,6 +14,12 @@ describe("local administrator password", () => {
 });
 
 describe("mail template variables", () => {
+  it("首次故障保持普通正文，重复告警才追加次数和时长摘要", () => {
+    expect(buildMonitorAlertBody("状态：{{status}}", "alert", 1)).toBe("状态：{{status}}");
+    expect(buildMonitorAlertBody("状态：{{status}}", "alert", 2)).toContain("当前告警次数：第 {{alertCount}} 次");
+    expect(buildMonitorAlertBody("状态：{{status}}", "alert", 2)).toContain("故障持续时长：{{outageDuration}}");
+  });
+
   it("includes an editable outage duration field in the default recovery template", () => {
     expect(defaultMailTemplates.recoveryBody).toContain("故障持续时长：{{outageDuration}}");
   });

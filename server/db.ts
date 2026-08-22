@@ -169,7 +169,7 @@ function mapTask(row: Row): MonitorTask {
     id: Number(row.id), ownerId: Number(row.ownerId), name: String(row.name), url: String(row.url), expectedContent: row.expectedContent ? String(row.expectedContent) : null,
     forbiddenContent: row.forbiddenContent ? String(row.forbiddenContent) : null, intervalMinutes: Number(row.intervalMinutes), alertMode: row.alertMode === "repeat" ? "repeat" : "once", repeatAlertMinutes: Number(row.repeatAlertMinutes), enabled: parseBoolean(row.enabled),
     status: (["up", "down", "content_mismatch"].includes(String(row.status)) ? row.status : "unknown") as MonitorTask["status"], lastCheckedAt: parseDate(row.lastCheckedAt), nextCheckAt: parseDate(row.nextCheckAt), lastResponseTimeMs: row.lastResponseTimeMs === null ? null : Number(row.lastResponseTimeMs), lastHttpStatus: row.lastHttpStatus === null ? null : Number(row.lastHttpStatus), lastError: row.lastError ? String(row.lastError) : null,
-    alertOpen: parseBoolean(row.alertOpen), lastAlertAt: parseDate(row.lastAlertAt), lastFailureAt: parseDate(row.lastFailureAt), lastRecoveredAt: parseDate(row.lastRecoveredAt), recoverySuccessStreak: Number(row.recoverySuccessStreak ?? 0), createdAt: parseDate(row.createdAt)!, updatedAt: parseDate(row.updatedAt)!,
+    alertOpen: parseBoolean(row.alertOpen), lastAlertAt: parseDate(row.lastAlertAt), lastFailureAt: parseDate(row.lastFailureAt), lastRecoveredAt: parseDate(row.lastRecoveredAt), recoverySuccessStreak: Number(row.recoverySuccessStreak ?? 0), alertCount: Number(row.alertCount ?? 0), createdAt: parseDate(row.createdAt)!, updatedAt: parseDate(row.updatedAt)!,
   };
 }
 

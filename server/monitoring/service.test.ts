@@ -35,6 +35,7 @@ const task = {
   lastFailureAt: null,
   lastRecoveredAt: null,
   recoverySuccessStreak: 0,
+  alertCount: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
 } as const;
@@ -58,7 +59,7 @@ describe("monitor alert state transitions", () => {
     vi.mocked(statusFromCheck).mockReturnValue("down");
     await expect(runMonitorTask(task as never)).resolves.toMatchObject({ status: "down", notification: "alert" });
     expect(db.recordMonitorCheck).toHaveBeenCalledWith(7, expect.objectContaining({ status: "network_error", resolvedAddresses: ["203.0.113.10"] }), expect.objectContaining({ alertOpen: true }));
-    expect(sendMonitorAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: "alert", taskName: "官网首页" }));
+    expect(sendMonitorAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: "alert", taskName: "官网首页", alertCount: 1 }));
     const values = vi.mocked(db.recordMonitorCheck).mock.calls[0]?.[2] as { nextCheckAt: Date };
     expect(values.nextCheckAt.getTime()).toBeGreaterThan(Date.now() + 100_000);
     expect(values.nextCheckAt.getTime()).toBeLessThan(Date.now() + 130_000);
@@ -95,8 +96,8 @@ describe("monitor alert state transitions", () => {
     vi.mocked(statusFromCheck).mockReturnValue("down");
     const staleAlertAt = new Date(Date.now() - 31 * 60_000);
     const failureStartedAt = new Date(Date.now() - 2 * 60 * 60_000);
-    await expect(runMonitorTask({ ...task, alertOpen: true, alertMode: "repeat", repeatAlertMinutes: 30, lastAlertAt: staleAlertAt, lastFailureAt: failureStartedAt } as never)).resolves.toMatchObject({ notification: "alert" });
-    expect(sendMonitorAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: "alert" }));
+    await expect(runMonitorTask({ ...task, alertOpen: true, alertMode: "repeat", repeatAlertMinutes: 30, alertCount: 1, lastAlertAt: staleAlertAt, lastFailureAt: failureStartedAt } as never)).resolves.toMatchObject({ notification: "alert" });
+    expect(sendMonitorAlert).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ type: "alert", alertCount: 2, outageDuration: expect.any(String) }));
     expect(db.recordMonitorCheck).toHaveBeenCalledWith(7, expect.anything(), expect.objectContaining({ lastFailureAt: failureStartedAt }));
   });
 

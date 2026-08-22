@@ -38,10 +38,10 @@ function escapeHtml(value: string): string {
   }[character] ?? character));
 }
 
-export type MailTemplateValues = Record<"taskName" | "url" | "status" | "httpStatus" | "responseTimeMs" | "errorMessage" | "checkedAt" | "outageDuration", string>;
+export type MailTemplateValues = Record<"taskName" | "url" | "status" | "httpStatus" | "responseTimeMs" | "errorMessage" | "checkedAt" | "outageDuration" | "alertCount" | "firstFailureAt", string>;
 
 export function renderMailTemplate(template: string, values: MailTemplateValues): string {
-  return template.replace(/{{\s*(taskName|url|status|httpStatus|responseTimeMs|errorMessage|checkedAt|outageDuration)\s*}}/g, (_, key: keyof MailTemplateValues) => values[key] ?? "");
+  return template.replace(/{{\s*(taskName|url|status|httpStatus|responseTimeMs|errorMessage|checkedAt|outageDuration|alertCount|firstFailureAt)\s*}}/g, (_, key: keyof MailTemplateValues) => values[key] ?? "");
 }
 
 export function renderMonitorEmailHtml(text: string, url: string): string {
@@ -73,9 +73,14 @@ export async function sendTestEmail(config: MailConfig): Promise<void> {
   });
 }
 
+export function buildMonitorAlertBody(template: string, type: "alert" | "recovery", alertCount = 1): string {
+  if (type === "recovery" || alertCount <= 1) return template;
+  return `${template}\n\n【持续故障提醒】\n当前告警次数：第 {{alertCount}} 次\n首次故障时间：{{firstFailureAt}}\n故障持续时长：{{outageDuration}}`;
+}
+
 export async function sendMonitorAlert(
   config: MailConfig,
-  input: { type: "alert" | "recovery"; taskName: string; url: string; status: string; httpStatus: number | null; responseTimeMs: number | null; errorMessage: string | null; outageDuration?: string; templates: MailTemplates }
+  input: { type: "alert" | "recovery"; taskName: string; url: string; status: string; httpStatus: number | null; responseTimeMs: number | null; errorMessage: string | null; outageDuration?: string; alertCount?: number; firstFailureAt?: string; templates: MailTemplates }
 ): Promise<void> {
   const recipients = parseRecipients(config.recipients);
   if (recipients.length === 0) throw new Error("未配置告警收件人。");
@@ -83,12 +88,12 @@ export async function sendMonitorAlert(
   const values: MailTemplateValues = {
     taskName: input.taskName, url: input.url, status: input.status, httpStatus: input.httpStatus?.toString() ?? "—",
     responseTimeMs: input.responseTimeMs !== null ? `${input.responseTimeMs} ms` : "—", errorMessage: input.errorMessage ?? "—",
-    checkedAt: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }), outageDuration: input.outageDuration ?? "—",
+    checkedAt: new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }), outageDuration: input.outageDuration ?? "—", alertCount: input.alertCount?.toString() ?? "1", firstFailureAt: input.firstFailureAt ?? "—",
   };
   const subject = renderMailTemplate(isRecovery ? input.templates.recoverySubject : input.templates.alertSubject, values);
   const bodyTemplate = isRecovery && !input.templates.recoveryBody.includes("{{outageDuration}}")
     ? `${input.templates.recoveryBody}\n\n故障持续时长：{{outageDuration}}`
-    : (isRecovery ? input.templates.recoveryBody : input.templates.alertBody);
+    : buildMonitorAlertBody(isRecovery ? input.templates.recoveryBody : input.templates.alertBody, input.type, input.alertCount ?? 1);
   const text = renderMailTemplate(bodyTemplate, values);
   await buildTransport(config).sendMail({
     from: config.fromEmail,

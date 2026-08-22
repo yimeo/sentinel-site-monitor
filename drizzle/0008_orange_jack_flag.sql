@@ -1,0 +1,1 @@
+ALTER TABLE `monitor_tasks` ADD `alertCount` int DEFAULT 0 NOT NULL;

@@ -54,6 +54,7 @@ export const monitorTasks = mysqlTable(
     lastFailureAt: timestamp("lastFailureAt"),
     lastRecoveredAt: timestamp("lastRecoveredAt"),
     recoverySuccessStreak: int("recoverySuccessStreak").notNull().default(0),
+    alertCount: int("alertCount").notNull().default(0),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
     updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   },

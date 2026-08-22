@@ -24,7 +24,7 @@ export function formatOutageDuration(durationMs: number): string {
 async function sendStateChangeEmail(
   task: MonitorTask,
   type: "alert" | "recovery",
-  data: { status: string; httpStatus: number | null; responseTimeMs: number | null; errorMessage: string | null; outageDuration?: string }
+  data: { status: string; httpStatus: number | null; responseTimeMs: number | null; errorMessage: string | null; outageDuration?: string; alertCount?: number; firstFailureAt?: string }
 ): Promise<boolean> {
   const smtp = await db.getSmtpSettings(task.ownerId);
   if (!smtp) return false;
@@ -49,6 +49,7 @@ export async function runMonitorTask(task: MonitorTask): Promise<RunResult> {
   const shouldRepeatAlert = !isHealthy && task.alertOpen && task.alertMode === "repeat" && task.lastAlertAt !== null
     && now.getTime() - task.lastAlertAt.getTime() >= task.repeatAlertMinutes * 60_000;
   const shouldAlert = shouldInitialAlert || shouldRepeatAlert;
+  const nextAlertCount = !isHealthy ? (shouldAlert ? (task.alertCount ?? 0) + 1 : (task.alertCount ?? 0)) : 0;
   const shouldRecover = isHealthy && task.alertOpen && recoverySuccessStreak >= 1;
   const nextCheckAt = shouldRecover || !task.alertOpen && isHealthy
     ? new Date(Math.max(now.getTime(), task.nextCheckAt?.getTime() ?? now.getTime()) + task.intervalMinutes * 60_000)
@@ -66,6 +67,7 @@ export async function runMonitorTask(task: MonitorTask): Promise<RunResult> {
     lastFailureAt: isHealthy ? task.lastFailureAt : (task.alertOpen ? task.lastFailureAt ?? now : now),
     lastRecoveredAt: shouldRecover ? now : task.lastRecoveredAt,
     recoverySuccessStreak,
+    alertCount: shouldRecover ? 0 : nextAlertCount,
   });
 
   if (!shouldAlert && !shouldRecover) {
@@ -78,7 +80,9 @@ export async function runMonitorTask(task: MonitorTask): Promise<RunResult> {
       httpStatus: result.httpStatus,
       responseTimeMs: result.responseTimeMs,
       errorMessage: result.errorMessage,
-      outageDuration: shouldRecover && task.lastFailureAt ? formatOutageDuration(now.getTime() - task.lastFailureAt.getTime()) : "—",
+      outageDuration: shouldRecover && task.lastFailureAt ? formatOutageDuration(now.getTime() - task.lastFailureAt.getTime()) : shouldAlert && nextAlertCount > 1 && task.lastFailureAt ? formatOutageDuration(now.getTime() - task.lastFailureAt.getTime()) : "—",
+      alertCount: nextAlertCount,
+      firstFailureAt: task.lastFailureAt ? task.lastFailureAt.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }) : now.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }),
     });
     if (!delivered) return { taskId: task.id, status: nextStatus, notification: "delivery_failed" };
     if (shouldAlert) await db.updateMonitorTask(task.ownerId, task.id, { lastAlertAt: now });
